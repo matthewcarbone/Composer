@@ -7,7 +7,9 @@ Matthew R. Carbone
     Brookhaven National Laboratory, Computational Science Initiative
 """
 
+import datetime
 import random
+import subprocess
 import time
 
 import numpy as np
@@ -102,16 +104,44 @@ class SerialTrainProtocol:
         self.best_model_state_dict = None
         self.log = Logger(root)
 
+        # Get the optimizer starting params
+        for param_group in self.optimizer.param_groups:
+            o_params = {p: v for p, v in param_group.items() if p != 'params'}
+            break  # For us there's just one
+        o_params['name'] = str(self.optimizer.__class__)
+
+        # Do the same thing for the scheduler
+        s_params = None
+        if self.scheduler is not None:
+            scheduler_args = [
+                "mode", "factor", "patience", "threshold", "threshold_mode",
+                "cooldown", "min_lrs", "eps"
+            ]
+            s_params = {
+                k: v for k, v in vars(self.scheduler).items()
+                if k in scheduler_args
+            }
+            s_params['min_lr'] = s_params.pop('min_lrs')[0]
+            s_params['name'] = str(self.scheduler.__class__)
+
         # Log some information about the model and whatnot
         metadata = {
+            "datetime": str(datetime.datetime.now()),
             "root": root,
             "train_device": str(self.device),
             "n_trainable": sum(
                 param.numel() for param in self.model.parameters()
                 if param.requires_grad
             ),
-            "n_gpu": torch.cuda.device_count()
+            "n_gpu": torch.cuda.device_count(),
+            "optimizer": o_params,
+            "scheduler": s_params,
+            "model": self.model.model_args
+            # 'commit': subprocess.check_output(
+            #     ['git', 'rev-parse', 'HEAD'], universal_newlines=True
+            # ).strip()
         }
+
         self.log.meta(metadata)
 
     def _eval_valid_pass(self, valLoader, cache=False):
@@ -160,12 +190,12 @@ class SerialTrainProtocol:
         if valid_loss < best_valid_loss or epoch == 0:
             self.best_model_state_dict = self.model.state_dict()
             self.log.log(
-                f"Val. Loss: {valid_loss:.05e} < Best Val. Loss "
+                f"\tVal. Loss: {valid_loss:.05e} < Best Val. Loss "
                 f"{best_valid_loss:.05e}"
             )
-            self.log.log("Updating best_model_state_dict")
+            self.log.log("\tUpdating best_model_state_dict")
         else:
-            self.log.log(f"Val. Loss: {valid_loss:.05e}")
+            self.log.log(f"\tVal. Loss: {valid_loss:.05e}")
             pass
 
         return min(best_valid_loss, valid_loss)
@@ -193,7 +223,7 @@ class SerialTrainProtocol:
             self.log.log(f"Learning rate {clr:.02e}")
         return clr
 
-    def train(self, epochs, clip=None, print_every=10):
+    def train(self, epochs, clip=None, checkpoint_every=10):
         """Executes model training.
 
         Parameters
@@ -202,6 +232,9 @@ class SerialTrainProtocol:
             Number of full passes through the training data.
         clip : float, optional
             Gradient clipping.
+        checkpoint_every : int
+            Model state will checkpoint (save to disk) after this many epochs
+            have elapsed.
 
         Returns
         -------
@@ -218,6 +251,7 @@ class SerialTrainProtocol:
 
         # Begin training
         self.epoch = 0
+        t0_overall = time.time()
         while self.epoch < epochs:
 
             self.log.log(f"{self.epoch:03} begin")
@@ -240,22 +274,28 @@ class SerialTrainProtocol:
                 best_valid_loss, total_valid_loss, self.epoch
             )
 
-            self.log.loss(self.epoch, t_total, train_losses, valid_losses, clr)
+            self.log.loss(
+                self.epoch, t_total, np.sum(train_losses),
+                np.sum(valid_losses), clr
+            )
 
             train_loss_list.append(train_losses)
             valid_loss_list.append(valid_losses)
             learning_rates.append(clr)
 
-            if (self.epoch + 1) % print_every == 0:
-                e = self.epoch + 1
-                print(
-                    f"Done on epoch {e:03} in {t_total:.03f} s loss: "
-                    f"{train_losses.sum():.02e} | {valid_losses.sum():.02e}"
-                )
+            self.log.log(
+                f"\tDone on epoch {self.epoch:03} in {t_total:.03f} s loss: "
+                f"{train_losses.sum():.02e} | {valid_losses.sum():.02e}"
+            )
+
+            if self.epoch % checkpoint_every == 0:
+                self.log.state(self.best_model_state_dict, self.epoch)
 
             self.epoch += 1
 
         self.model.load_state_dict(self.best_model_state_dict)
+        self.log.state(self.best_model_state_dict, self.epoch)
+        self.log.meta({"total_training_time": time.time() - t0_overall})
 
         return train_loss_list, valid_loss_list, learning_rates
 
@@ -264,10 +304,10 @@ class SerialTrainProtocol:
         the loader specified in the loader_override argument, dataset."""
 
         if loader_override is not None:
-            # log.warning(
-            #     "Default validation loader is overridden - ensure this is "
-            #     "intentional, as this is likely evaluating on a testing set"
-            # )
+            self.log.log(
+                "Default validation loader is overridden - ensure this is "
+                "intentional, as this is likely evaluating on a testing set"
+            )
             pass
 
         loader = self.validLoader if loader_override is None \
@@ -276,7 +316,6 @@ class SerialTrainProtocol:
         # defaults.Result
         with torch.no_grad():
             losses, cache = self._eval_valid_pass(loader, cache=True)
-        # log.info(f"Eval complete: loss {losses}")
 
         return losses, cache
 
@@ -302,6 +341,12 @@ class SerialVAETrainProtocol(SerialTrainProtocol):
         if ramp_kld is not None:
             self.kl_ramp_epochs = ramp_kld
             self.kl_prefactor = 0.0
+
+        metadata = {
+            'kl_strength': self.kl_strength,
+            'ramp_kld': ramp_kld
+        }
+        self.log.meta(metadata)
 
     def _train_single_epoch(self, clip=None):
         """Executes the training of the model over a single full pass of

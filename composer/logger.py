@@ -12,6 +12,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import torch
 
 
 class Logger:
@@ -79,7 +80,7 @@ class Logger:
             vl = f"{vl:.08e}"
 
         with open(self.paths['loss'], 'a') as f:
-            f.write(f"{cc:03}\t{dt:.08e}\t{tl}\t{vl}\t{clr}\n")
+            f.write(f"{cc:03}\t{dt:.08e}\t{tl}\t{vl}\t{clr:.08e}\n")
 
     def log(self, msg):
         """General log file. Each line is timestamped and a message printed."""
@@ -88,3 +89,9 @@ class Logger:
 
         with open(self.paths['log'], 'a') as f:
             f.write(f"[{now}] {msg}\n")
+
+    def state(self, state_dict, epoch):
+        """Saves the model as a .pt file."""
+
+        path = self.root / Path(f"model_{epoch:05}.pt")
+        torch.save(state_dict, path)

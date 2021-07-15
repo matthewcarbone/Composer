@@ -144,6 +144,16 @@ class VariationalAutoencoder(nn.Module):
         latent_space_size : int
         """
 
+        # Used for model save/reload
+        self.model_args = {
+            'name': str(self.__class__),
+            'input_size': input_size,
+            'hidden_sizes': hidden_sizes,
+            'latent_space_size': latent_space_size,
+            'dropout': dropout,
+            'activation': activation
+        }
+
         super().__init__()
 
         self.encoder = Encoder(
