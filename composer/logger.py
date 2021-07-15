@@ -11,6 +11,8 @@ import datetime
 import json
 from pathlib import Path
 
+import numpy as np
+
 
 class Logger:
     """Class responsible for logging all relevant information to disk and the
@@ -38,7 +40,11 @@ class Logger:
         """Logs metadata by parsing json files."""
 
         path = self.paths['meta']
-        metadata = json.load(open(path))
+
+        try:
+            metadata = json.load(open(path))
+        except FileNotFoundError:
+            metadata = dict()
 
         # Merge the two dictionaries, with the provided one taking priority
         new_d = {**metadata, **d}
@@ -63,17 +69,17 @@ class Logger:
             The current learning rate.
         """
 
-        if isinstance(tl, list):
+        if isinstance(tl, (list, np.ndarray)):
             tl = "\t".join([f"{xx:.08e}" for xx in tl])
         else:
             tl = f"{tl:.08e}"
-        if isinstance(vl, list):
+        if isinstance(vl, (list, np.ndarray)):
             vl = "\t".join([f"{xx:.08e}" for xx in vl])
         else:
             vl = f"{vl:.08e}"
 
         with open(self.paths['loss'], 'a') as f:
-            f.write(f"{cc:03}\t{dt}:.08e\t{tl}\t{vl}\t{clr}\n")
+            f.write(f"{cc:03}\t{dt:.08e}\t{tl}\t{vl}\t{clr}\n")
 
     def log(self, msg):
         """General log file. Each line is timestamped and a message printed."""

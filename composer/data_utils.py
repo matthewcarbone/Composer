@@ -25,6 +25,9 @@ class Splits:
             requirement is that for [x, y, z], x.shape[0] == y.shape[0] == ...
         """
 
+        if not isinstance(data, list):
+            data = [data]
+
         # We only use a T/V/T split here
         assert len(splits) == 3
         assert sum(splits) == 1.0
@@ -54,9 +57,9 @@ class Splits:
         assert set(train_idxs).isdisjoint(set(test_idxs))
 
         # Assign these lists as tensor objects
-        self.train_idxs = torch.as_tensor(train_idxs)
-        self.val_idxs = torch.as_tensor(val_idxs)
-        self.test_idxs = torch.as_tensor(test_idxs)
+        self.train_idxs = train_idxs
+        self.val_idxs = val_idxs
+        self.test_idxs = test_idxs
 
     @property
     def train(self):
@@ -72,10 +75,13 @@ class Splits:
 
     @property
     def datasets(self):
+        train = [torch.FloatTensor(xx) for xx in self.train]
+        valid = [torch.FloatTensor(xx) for xx in self.valid]
+        test = [torch.FloatTensor(xx) for xx in self.test]
         return {
-            'train': TensorDataset(self.train),
-            'valid': TensorDataset(self.valid),
-            'test': TensorDataset(self.test),
+            'train': TensorDataset(*train),
+            'valid': TensorDataset(*valid),
+            'test': TensorDataset(*test),
         }
 
     def get_loaders(self, batch_size=32, pin_memory=True):
@@ -97,3 +103,25 @@ class Splits:
                 pin_memory=False
             ),
         }
+
+
+def random_in_interval(interval):
+    return (interval[1] - interval[0]) * np.random.random() + interval[0]
+
+
+def random_gaussians(
+    dims=(500, 200), mu_range=(-1.0, 1.0), sd_range=(0.05, 0.1),
+    height_range=(0.8, 1.0)
+):
+    """Returns a numpy array consisting of many Gaussians in which their
+    maximum height has been scaled to 1."""
+
+    grid = np.linspace(-1, 1, dims[1])
+
+    return np.array([
+        random_in_interval(height_range)
+        * np.exp(
+            -(random_in_interval(mu_range) - grid)**2 / 2.0
+            / random_in_interval(sd_range)**2
+        ) for _ in range(dims[0])
+    ])

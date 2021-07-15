@@ -12,6 +12,7 @@ import time
 
 import numpy as np
 import torch
+from torch.nn import MSELoss
 # import torch.nn as nn
 # from torch.optim.lr_scheduler import ReduceLROnPlateau
 
@@ -64,8 +65,8 @@ class SerialTrainProtocol:
     """
 
     def __init__(
-        self, root, trainLoader, validLoader, model, optimizer, criterion,
-        scheduler=None, seed=None
+        self, root, trainLoader, validLoader, model, optimizer,
+        criterion=MSELoss(), scheduler=None, seed=None
     ):
         """
         Parameters
@@ -192,7 +193,7 @@ class SerialTrainProtocol:
             self.log.log(f"Learning rate {clr:.02e}")
         return clr
 
-    def train(self, epochs, clip=None):
+    def train(self, epochs, clip=None, print_every=10):
         """Executes model training.
 
         Parameters
@@ -216,9 +217,10 @@ class SerialTrainProtocol:
         learning_rates = []
 
         # Begin training
-        for epoch in range(epochs):
+        self.epoch = 0
+        while self.epoch < epochs:
 
-            self.log.log(f"{epoch:03} begin")
+            self.log.log(f"{self.epoch:03} begin")
 
             # Train a single epoch
             t0 = time.time()
@@ -235,14 +237,23 @@ class SerialTrainProtocol:
             # Update the best state dictionary of the model for loading in
             # later on in the process
             best_valid_loss = self._update_state_dict(
-                best_valid_loss, total_valid_loss, epoch
+                best_valid_loss, total_valid_loss, self.epoch
             )
 
-            self.log.loss(epoch, t_total, train_losses, valid_losses, clr)
+            self.log.loss(self.epoch, t_total, train_losses, valid_losses, clr)
 
             train_loss_list.append(train_losses)
             valid_loss_list.append(valid_losses)
             learning_rates.append(clr)
+
+            if (self.epoch + 1) % print_every == 0:
+                e = self.epoch + 1
+                print(
+                    f"Done on epoch {e:03} in {t_total:.03f} s loss: "
+                    f"{train_losses.sum():.02e} | {valid_losses.sum():.02e}"
+                )
+
+            self.epoch += 1
 
         self.model.load_state_dict(self.best_model_state_dict)
 
@@ -275,7 +286,7 @@ class SerialVAETrainProtocol(SerialTrainProtocol):
 
     def __init__(
         self, root, trainLoader, validLoader, model, optimizer, criterion,
-        scheduler=None, seed=None, kl_strength=0.1
+        scheduler=None, seed=None, kl_strength=0.1, ramp_kld=None
     ):
         """The kl_strength parameter is how much to weight the KL divergence,
         which enforces latent space activations to be part of a multivariate
@@ -286,6 +297,11 @@ class SerialVAETrainProtocol(SerialTrainProtocol):
             scheduler, seed
         )
         self.kl_strength = kl_strength
+        self.kl_ramp_epochs = None
+        self.kl_prefactor = 1.0
+        if ramp_kld is not None:
+            self.kl_ramp_epochs = ramp_kld
+            self.kl_prefactor = 0.0
 
     def _train_single_epoch(self, clip=None):
         """Executes the training of the model over a single full pass of
@@ -307,16 +323,18 @@ class SerialVAETrainProtocol(SerialTrainProtocol):
         for batch, in self.trainLoader:
 
             self.optimizer.zero_grad()  # Zero the gradients
+
             batch = batch.to(device=self.device)  # Send batch to device
 
             # Run forward prop
             output, mu, log_var = self.model.forward(batch)
-            r_loss = self.criterion(output, batch) / len(batch)
-            kl_loss = self.kl_strength * vae_kl_loss(mu, log_var) / len(batch)
+            r_loss = self.criterion(output, batch)
+            kl_loss = self.kl_prefactor * self.kl_strength \
+                * vae_kl_loss(mu, log_var)
             epoch_loss.append([
                 r_loss.detach().item(), kl_loss.detach().item()
             ])
-            loss = kl_loss + r_loss
+            loss = r_loss
 
             # Run back prop
             loss.backward()
@@ -327,6 +345,10 @@ class SerialVAETrainProtocol(SerialTrainProtocol):
 
             # Step the optimizer
             self.optimizer.step()
+
+        if self.kl_ramp_epochs is not None:
+            self.kl_prefactor \
+                = np.tanh(2.0 * self.epochs_ramped / self.kl_ramp_epochs)
 
         return np.mean(epoch_loss, axis=0)  # mean loss over this epoch
 
@@ -357,8 +379,9 @@ class SerialVAETrainProtocol(SerialTrainProtocol):
 
             # Run forward prop
             output, mu, log_var = self.model.forward(batch)
-            loss = self.criterion(output, batch) / len(batch)
-            kl_loss = self.kl_strength * vae_kl_loss(mu, log_var) / len(batch)
+            loss = self.criterion(output, batch)
+            kl_loss = self.kl_prefactor * self.kl_strength \
+                * vae_kl_loss(mu, log_var)
             total_loss.append((loss.detach().item(), kl_loss.detach().item()))
             loss += kl_loss
 
@@ -373,5 +396,5 @@ class SerialVAETrainProtocol(SerialTrainProtocol):
                 ]
                 cache_list.extend(cache_list_batch)
 
-        cache_list.sort(key=lambda x: x[-1])
+        cache_list.sort(key=lambda x: np.abs(x[0] - x[1]).sum())
         return np.mean(total_loss, axis=0), cache_list

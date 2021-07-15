@@ -12,6 +12,7 @@ import torch.nn as nn
 
 
 class NeuralNetwork(nn.Module):
+    """Feedforward neural network model with a final linear activation."""
 
     def __init__(self, n_in, hidden_sizes, n_out, dropout, activation):
         """
@@ -25,7 +26,7 @@ class NeuralNetwork(nn.Module):
         n_out : int
             Number of output neurons.
         dropout : float
-            Default is 0. Applied to all layers.
+            Dropout applied to all layers.
         activation : {'relu', 'leaky_relu'}
             Activation function.
         """
@@ -39,16 +40,20 @@ class NeuralNetwork(nn.Module):
         self.input_layer = torch.nn.Linear(n_in, hidden_sizes[0])
 
         hidden_layers = []
+        hidden_bn_layers = []
 
         for ii in range(0, len(hidden_sizes) - 1):
-            hidden_layers.append(
-                torch.nn.Linear(hidden_sizes[ii], hidden_sizes[ii + 1])
-            )
-            hidden_layers.append(
+            hidden_layers.append(torch.nn.Linear(
+                hidden_sizes[ii], hidden_sizes[ii + 1], bias=False
+            ))
+
+        for ii in range(0, len(hidden_sizes) - 1):
+            hidden_bn_layers.append(
                 torch.nn.BatchNorm1d(hidden_sizes[ii + 1])
             )
 
         self.hidden_layers = nn.ModuleList(hidden_layers)
+        self.hidden_bn_layers = nn.ModuleList(hidden_bn_layers)
 
         self.output_layer = torch.nn.Linear(
             hidden_sizes[-1], n_out
@@ -68,8 +73,8 @@ class NeuralNetwork(nn.Module):
         layer, in addition to dropout (except to the output layer)."""
 
         x = self.dropout(self.activation(self.input_layer(x)))
-        for layer in self.hidden_layers:
-            x = self.dropout(self.activation(layer(x)))
+        for layer, bn_layer in zip(self.hidden_layers, self.hidden_bn_layers):
+            x = self.dropout(self.activation(bn_layer(layer(x))))
         return self.output_layer(x)
 
 
@@ -98,9 +103,7 @@ class Decoder(NeuralNetwork):
 
 
 def reparameterize(mu, log_var):
-    """ Implements the 'reparameterization trick'
-    https://debuggercafe.com/
-    getting-started-with-variational-autoencoder-using-pytorch/
+    """Implements the 'reparameterization trick'
 
     Parameters
     ----------
@@ -114,9 +117,9 @@ def reparameterize(mu, log_var):
     torch.Tensor
     """
 
-    std = torch.exp(0.5 * log_var)  # standard deviation
-    eps = torch.randn_like(std)  # `randn_like` as we need the same size
-    sample = mu + (eps * std)  # sampling as if coming from the input space
+    std = torch.exp(0.5 * log_var)
+    eps = torch.randn_like(std)
+    sample = mu + eps * std
     return sample
 
 
@@ -128,7 +131,7 @@ class VariationalAutoencoder(nn.Module):
 
     def __init__(
         self, input_size, hidden_sizes, latent_space_size,
-        dropout=0.0, activation="leaky_relu"
+        dropout=0.0, activation="relu"
     ):
         """Initializer.
         Parameters
