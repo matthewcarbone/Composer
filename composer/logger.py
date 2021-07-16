@@ -80,6 +80,8 @@ class Logger:
             vl = f"{vl:.08e}"
 
         with open(self.paths['loss'], 'a') as f:
+            if clr is None:
+                clr = 0.0
             f.write(f"{cc:03}\t{dt:.08e}\t{tl}\t{vl}\t{clr:.08e}\n")
 
     def log(self, msg):
