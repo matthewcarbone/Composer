@@ -274,10 +274,7 @@ class SerialTrainProtocol:
                 best_valid_loss, total_valid_loss, self.epoch
             )
 
-            self.log.loss(
-                self.epoch, t_total, np.sum(train_losses),
-                np.sum(valid_losses), clr
-            )
+            self.log.loss(self.epoch, t_total, train_losses, valid_losses, clr)
 
             train_loss_list.append(train_losses)
             valid_loss_list.append(valid_losses)
