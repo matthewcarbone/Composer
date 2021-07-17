@@ -184,6 +184,8 @@ def load_VariationalAutoencoder(path, model_kwargs):
     """Loads the VAE model from the checkpoint provided."""
 
     device = torch.device('cpu')
+    if "name" in list(model_kwargs.keys()):
+        model_kwargs.pop("name")
     model = VariationalAutoencoder(**model_kwargs)
     model.load_state_dict(torch.load(path, map_location=device))
     return model
