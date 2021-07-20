@@ -13,6 +13,25 @@ import torch
 from torch.utils.data import TensorDataset, DataLoader
 
 
+def numpy_to_FloatTensorLoader(
+    X, batch_size=32, shuffle=True, pin_memory=True
+):
+    """Converts a numpy array to a torch FloatTensor, then to a
+    TensorDataset, then to a DataLoader.
+
+    Returns
+    -------
+    torch.utils.data.DataLoader
+    """
+
+    train = [torch.FloatTensor(X)]
+    dataset = TensorDataset(*train)
+    return DataLoader(
+        dataset, batch_size=batch_size, shuffle=shuffle,
+        pin_memory=pin_memory
+    )
+
+
 class Splits:
 
     def __init__(self, data, seed=12345, splits=(0.8, 0.1, 0.1)):
