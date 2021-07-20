@@ -131,7 +131,7 @@ class VariationalAutoencoder(nn.Module):
 
     def __init__(
         self, input_size, hidden_sizes, latent_space_size,
-        dropout=0.0, activation="relu"
+        dropout=0.0, activation="relu", final_activation="softplus"
     ):
         """Initializer.
         Parameters
@@ -151,7 +151,8 @@ class VariationalAutoencoder(nn.Module):
             'hidden_sizes': hidden_sizes,
             'latent_space_size': latent_space_size,
             'dropout': dropout,
-            'activation': activation
+            'activation': activation,
+            'final_activation': final_activation
         }
 
         super().__init__()
@@ -165,7 +166,12 @@ class VariationalAutoencoder(nn.Module):
             dropout=dropout, activation=activation
         )
         self.latent_space_size = latent_space_size
-        self.softplus = nn.Softplus()
+
+        self.final_activation = None
+        if final_activation == "softplus":
+            self.final_activation = nn.Softplus()
+        elif final_activation == "sigmoid":
+            self.final_activation = nn.Sigmoid()
 
     def forward(self, x):
         """Forward propagation for the autoencoder."""
@@ -177,7 +183,10 @@ class VariationalAutoencoder(nn.Module):
         # And the second set as the log variances
         log_var = x[:, 1, :]
         z = reparameterize(mu, log_var)
-        return self.softplus(self.decoder(z)), mu, log_var
+        out = self.decoder(z)
+        if self.final_activation is not None:
+            out = self.final_activation(out)
+        return out, mu, log_var
 
 
 def load_VariationalAutoencoder(path, model_kwargs):
