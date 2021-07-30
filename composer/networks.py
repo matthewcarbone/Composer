@@ -158,10 +158,21 @@ class DecoderNet(nn.Module):
 class Model(pl.LightningModule):
 
     def __init__(
-        self, data, print_every_epoch=1, latent_space_size=2, grid_size=128,
-        kl_lambda=0.0, kl_ramp_epochs=None, architecture=[64, 32],
-        dx_prior=0.1, decoder_hidden=16,
-        criterion=nn.MSELoss(reduction='mean'), last_activation=nn.Softplus()
+        self,
+        data,
+        train_batch_size=2048,
+        valid_batch_size=1024,
+        print_every_epoch=1,
+        latent_space_size=2,
+        grid_size=128,
+        kl_lambda=0.0,
+        kl_ramp_epochs=None,
+        architecture=[64, 32],
+        dx_prior=0.1,
+        decoder_hidden=16,
+        criterion=nn.MSELoss(reduction='mean'),
+        last_activation=nn.Softplus(),
+        workers=3
     ):
         super().__init__()
 
@@ -201,6 +212,9 @@ class Model(pl.LightningModule):
         else:
             self._kl_ramp_strength = 1.0
         self._dx_prior = dx_prior  # Control the overall strength of the shift
+        self._train_batch_size = train_batch_size
+        self._valid_batch_size = valid_batch_size
+        self._workers = workers
 
     def _split_encoder_output(self, x):
         x = x.reshape(-1, 2, self._latent_space_size)
@@ -237,9 +251,14 @@ class Model(pl.LightningModule):
         dx, z, mu, log_var = self(x)
 
         # Create the grid
-        _grid = torch.linspace(-1.0, 1.0, x.shape[1]).expand(*x.shape)
-
         # Use the latent space information to shift the grid
+        # Since it was initialized here, I think I have to manually
+        # move it to the same device as x.
+        _grid = torch.linspace(
+            -1.0, 1.0, x.shape[1], device=self.device
+        ).expand(*x.shape)
+
+        # Execute the shift and decode
         _grid = _grid + self._dx_prior * dx.reshape(-1, 1)
         x_hat = self.decoder(_grid, z)
 
@@ -320,12 +339,16 @@ class Model(pl.LightningModule):
     def train_dataloader(self):
         print("train_dataloader called")
         ds = TensorDataset(self._X_train)
-        return DataLoader(ds, batch_size=2048, num_workers=12)
+        return DataLoader(
+            ds, batch_size=self._train_batch_size, num_workers=self._workers
+        )
 
     def val_dataloader(self):
         print("val_dataloader called")
         ds = TensorDataset(self._X_val)
-        return DataLoader(ds, batch_size=2048, num_workers=12)
+        return DataLoader(
+            ds, batch_size=self._valid_batch_size, num_workers=self._workers
+        )
 
     def on_train_end(self):
         """Logs information as training ends."""
