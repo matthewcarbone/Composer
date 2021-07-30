@@ -340,14 +340,16 @@ class Model(pl.LightningModule):
         print("train_dataloader called")
         ds = TensorDataset(self._X_train)
         return DataLoader(
-            ds, batch_size=self._train_batch_size, num_workers=self._workers
+            ds, batch_size=self._train_batch_size, num_workers=self._workers,
+            persistent_workers=True, pin_memory=True
         )
 
     def val_dataloader(self):
         print("val_dataloader called")
         ds = TensorDataset(self._X_val)
         return DataLoader(
-            ds, batch_size=self._valid_batch_size, num_workers=self._workers
+            ds, batch_size=self._valid_batch_size, num_workers=self._workers,
+            persistent_workers=True, pin_memory=True
         )
 
     def on_train_end(self):
