@@ -19,6 +19,3 @@ def random_gaussian_dataset(n_samples=2**11 * 5, l_signal=128):
 
     # Normalize to (0, 1)
     return torch.FloatTensor(data), mu, sig
-
-
-GRID = torch.linspace(-1, 1, 128)
