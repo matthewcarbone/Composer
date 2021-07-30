@@ -29,45 +29,164 @@ def vae_kl_loss(mu, logvar):
     return -0.5 * torch.sum(1.0 + logvar - mu.pow(2) - logvar.exp())
 
 
+def split_latents(z):
+    """Takes a latent space vector and separates it into the shift and the
+    rest of the latent variables."""
+
+    return z[:, 0], z[:, 1:]
+
+
 class NetBlock(nn.Module):
 
-    def __init__(self, n1, n2):
+    def __init__(self, n1, n2, batch_norm=True, activation=nn.ReLU()):
         super().__init__()
-        self.block = nn.Sequential(
-            nn.Linear(n1, n2),
-            nn.BatchNorm1d(n2),
-            nn.ReLU()
-        )
+
+        block = [nn.Linear(n1, n2)]
+        if batch_norm:
+            block.append(nn.BatchNorm1d(n2))
+        block.append(activation)
+        self.block = nn.Sequential(*block)
 
     def forward(self, x):
         return self.block(x)
 
 
-class Model(pl.LightningModule):
+class Net(nn.Module):
 
     def __init__(
-        self, data, print_every_epoch=20, latent_space_size=2, kl_lambda=0.0,
-        kl_ramp_epochs=None, architecture=[128, 64, 32]
+        self, input_size, architecture, output_size,
+        last_activation=nn.Softplus()
     ):
         super().__init__()
 
-        # Initialize the encoder
-        encoder = [
+        # Initialize the net
+        net = [nn.Linear(input_size, architecture[0])] + [
             NetBlock(architecture[ii], architecture[ii + 1])
             for ii in range(len(architecture) - 1)
-        ] + [nn.Linear(architecture[-1], 2 * latent_space_size)]
-        self.encoder = nn.Sequential(*encoder)
+        ] + [nn.Linear(architecture[-1], output_size)]
+        if last_activation is not None:
+            net.append(last_activation)
+        self.net = nn.Sequential(*net)
+
+    def forward(self, x):
+        return self.net(x)
+
+
+class DecoderNet(nn.Module):
+
+    def __init__(
+        self, n_latent_not_dx, decoder_architecture, hidden=16, grid_size=100,
+        last_activation=nn.Softplus()
+    ):
+        """
+        Parameters
+        ----------
+        n_latent_not_dx : int
+            The number of variables in the latent space that do *not*
+            correspond to the invariant neuron.
+        decoder_architecture : list[int]
+            A list of integers corresponding to the architecture of the latent
+            space part of the decoder network.
+        hidden : int
+            The number of hidden states contained in this simple network. Both
+            the invariant and relative behavior neurons are mapped to this
+            size. Default is 128.
+        grid_size : int
+            The size of the coordinate grid. Default is 100.
+        last_activation
+            Activation function from torch.nn which is the last non-linear
+            transform to be applied to the data. Default is Softplus
+            (to ensure output is positive).
+        """
+
+        super().__init__()
+
+        self.n_latent_not_dx = n_latent_not_dx
+        self.hidden = hidden
+        self.grid_size = grid_size
+
+        # Define mappings on the x-coordinates
+        self.coord_linear_1 = nn.Linear(1, self.hidden)
+
+        # Define mappings on the latents
+        self.latent_linear_1 = nn.Linear(self.n_latent_not_dx, self.hidden)
+
+        # Final network
+        self.final_net = Net(
+            self.hidden, decoder_architecture, 1,
+            last_activation=last_activation
+        )
+
+    def forward(self, coord, z):
+        """Executes the forward pass for the Decoder network.
+
+        Parameters
+        ----------
+        coord : torch.Tensor
+            The coordinate tensor of shape (batch size, grid size). Note this
+            is usually just a copied grid, where each row has been modified
+            slightly by some dx.
+        z : torch.Tensor
+            The latent space tensor of shape (batch size, n_latent_not_dx).
+
+        Returns
+        -------
+        torch.Tensor
+        """
+
+        # Hidden layers on the coordinates
+        coord = self.coord_linear_1(coord.reshape(-1, 1))
+        coord = coord.reshape(-1, self.grid_size, self.hidden)
+
+        # Hidden layers on the latent space
+        z = self.latent_linear_1(z).reshape(-1, 1, self.hidden)
+
+        # Broadcasting; combine the results
+        # Resulting shape is (BS, grid_size, hidden)
+        res = coord + z
+
+        # Apply the "standard" decoder network. The input to the decoder net
+        # will be (BS * grid_size, hidden) and should map to
+        # (BS * grid_size, 1). That will finally be reshaped back to
+        # (BS, grid_size).
+        res = self.final_net(res.reshape(-1, self.hidden))
+
+        # Final shape is (BS * grid_size, 1); reshape for final output
+        return res.reshape(-1, self.grid_size)
+
+
+class Model(pl.LightningModule):
+
+    def __init__(
+        self, data, print_every_epoch=1, latent_space_size=2, grid_size=128,
+        kl_lambda=0.0, kl_ramp_epochs=None, architecture=[64, 32],
+        dx_prior=0.1, decoder_hidden=16,
+        criterion=nn.MSELoss(reduction='mean'), last_activation=nn.Softplus()
+    ):
+        super().__init__()
+
+        assert latent_space_size > 0
+
+        print(
+            "Model initializing with TI-VAE; "
+            f"Latent size={latent_space_size} (excludes dx)"
+        )
+        print(f"dx_prior is {dx_prior:.02e}")
+
+        # Initialize the encoder
+        self.encoder = Net(
+            grid_size, architecture, 2 * latent_space_size + 1,
+            last_activation=None
+        )
 
         # Initialize the decoder
-        r_architecture = list(reversed(architecture))
-        decoder = [nn.Linear(latent_space_size, r_architecture[0])] + [
-            NetBlock(r_architecture[ii], r_architecture[ii + 1])
-            for ii in range(len(r_architecture) - 1)
-        ] + [nn.Linear(r_architecture[-1], r_architecture[-1]), nn.Softplus()]
+        self.decoder = DecoderNet(
+            latent_space_size, list(reversed(architecture)),
+            hidden=decoder_hidden, grid_size=grid_size,
+            last_activation=last_activation
+        )
 
-        self.decoder = nn.Sequential(*decoder)
-
-        self.mse_loss = nn.MSELoss(reduction='mean')
+        self.criterion = criterion
 
         # Custom
         self._X_train = data['train']
@@ -81,9 +200,10 @@ class Model(pl.LightningModule):
             self._kl_ramp_strength = 0.0
         else:
             self._kl_ramp_strength = 1.0
+        self._dx_prior = dx_prior  # Control the overall strength of the shift
 
     def _split_encoder_output(self, x):
-        x = x.view(-1, 2, self._latent_space_size)
+        x = x.reshape(-1, 2, self._latent_space_size)
 
         # Use the first set as the distributions
         mu = x[:, 0, :]
@@ -97,29 +217,34 @@ class Model(pl.LightningModule):
         # in lightning, forward defines the prediction/inference actions
 
         embedding = self.encoder(x)
-        mu, log_var = self._split_encoder_output(embedding)
+
+        # The first embedding is dx; the rest are the true latent variables.
+        # This will disconnect dx from the KL divergence part of the backprop
+        dx = embedding[:, 0]
+        mu, log_var = self._split_encoder_output(embedding[:, 1:])
 
         if training:
-            return reparameterize(mu, log_var), mu, log_var
+            return dx, reparameterize(mu, log_var), mu, log_var
 
-        # If not training, return the mean and standard deviation
-        return mu, torch.exp(0.5 * log_var)
-
-    def reconstruct(self, x):
-        self.eval()
-        with torch.no_grad():
-            mu, _ = self(x, training=False)
-            dec_out = self.decoder(mu)
-        return dec_out.detach()
+        # If not training, return just dx, the mean and standard deviation
+        return dx, mu, torch.exp(0.5 * log_var)
 
     def _single_forward_step(self, batch, batch_index):
+        """Executes a single forward pass given some batch and batch index.
+        In this model, we first encode using self(x)"""
 
         x, = batch
-        z, mu, log_var = self(x)
-        x_hat = self.decoder(z)
+        dx, z, mu, log_var = self(x)
+
+        # Create the grid
+        _grid = torch.linspace(-1.0, 1.0, x.shape[1]).expand(*x.shape)
+
+        # Use the latent space information to shift the grid
+        _grid = _grid + self._dx_prior * dx.reshape(-1, 1)
+        x_hat = self.decoder(_grid, z)
 
         # Compute losses
-        mse_loss = self.mse_loss(x_hat, x)  # reduction = mean already applies
+        mse_loss = self.criterion(x_hat, x)  # reduction = mean already applies
         kl_loss = vae_kl_loss(mu, log_var) / x.shape[0]
 
         loss = self._kl_lambda * self._kl_ramp_strength * kl_loss + mse_loss
@@ -157,7 +282,8 @@ class Model(pl.LightningModule):
 
         # Ramp the kl_loss if necessary
         if self._kl_ramp_epochs is not None:
-            self._kl_ramp_strength = np.tanh(2.0 * epoch / self._kl_ramp_epochs)
+            self._kl_ramp_strength = \
+                np.tanh(2.0 * epoch / self._kl_ramp_epochs)
 
     def validation_step(self, batch, batch_idx):
         return self._single_forward_step(batch, batch_idx)
