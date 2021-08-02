@@ -294,10 +294,15 @@ class Model(pl.LightningModule):
     def training_epoch_end(self, outputs):
         d = self._log_outputs(outputs, 'train')
         epoch = self.trainer.current_epoch + 1
-        dt = (time.time() - self._epoch_dt) / 60.0
+        dt = time.time() - self._epoch_dt
         if epoch % self._print_every_epoch == 0:
             loss = d['loss']
-            print(f"Epoch {epoch:05}: dt: {dt:.02} m; train loss: {loss:.03e}")
+            mse_loss = d['mse_loss']
+            kl_loss = d['kl_loss']
+            print(
+                f"\ttr tot/mse/kl loss: {loss:.03e} | {mse_loss:.03e}"
+                f" | {kl_loss:.03e} ({dt:.02f} s | {(dt/60.0):.02f} m)"
+            )
 
         # Ramp the kl_loss if necessary
         if self._kl_ramp_epochs is not None:
@@ -321,7 +326,14 @@ class Model(pl.LightningModule):
 
         if epoch % self._print_every_epoch == 0:
             loss = d['loss']
-            print(f"Epoch {epoch:05}: val loss {loss:.03e}; lr {lr:.03e}")
+            mse_loss = d['mse_loss']
+            kl_loss = d['kl_loss']
+            print(f"Epoch {epoch:05}")
+            print(f"\tlr/kl_ramp: {lr:.03e}/{self._kl_ramp_strength:.02f}")
+            print(
+                f"\tcv tot/mse/kl loss: {loss:.03e} | {mse_loss:.03e}"
+                f" | {kl_loss:.03e}"
+            )
 
     def configure_optimizers(self):
         print("configure_optimizers called")
