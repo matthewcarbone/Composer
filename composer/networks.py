@@ -6,12 +6,6 @@ from torch import nn
 from torch.utils.data import DataLoader, TensorDataset
 
 import pytorch_lightning as pl
-from pytorch_lightning.loggers.csv_logs import CSVLogger
-from pytorch_lightning.callbacks.early_stopping import EarlyStopping
-from pytorch_lightning.callbacks import ModelCheckpoint
-
-# X_train, mu_train, std_train = generate_data(n_samples=2**12 * 5)
-# X_val, mu_val, std_val = generate_data(n_samples=2**6 * 5)
 
 
 def reparameterize(mu, log_var):
@@ -24,7 +18,7 @@ def reparameterize(mu, log_var):
 
 
 def vae_kl_loss(mu, logvar):
-    """ KL-Divergence of VAE ouputted (mu, logvar) with unit Gaussian"""
+    """KL-Divergence of VAE ouputted (mu, logvar) with unit Gaussian"""
 
     return -0.5 * torch.sum(1.0 + logvar - mu.pow(2) - logvar.exp())
 
