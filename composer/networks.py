@@ -157,9 +157,9 @@ class Model(pl.LightningModule):
         grid_size=128,
         kl_lambda=0.0,
         kl_ramp_epochs=None,
-        architecture=[64, 32],
+        architecture=[128, 64, 32],
         dx_prior=0.1,
-        decoder_hidden=16,
+        decoder_hidden=32,
         criterion='mse',
         last_activation='softplus',
         **kwargs
@@ -181,6 +181,8 @@ class Model(pl.LightningModule):
 
         if self.hparams.last_activation == 'softplus':
             last_activation = nn.Softplus()
+        elif self.hparams.last_activation == 'sigmoid':
+            last_activation = nn.Sigmoid()
         else:
             raise ValueError(f"Unknown last activation {last_activation}")
 
