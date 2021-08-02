@@ -159,10 +159,6 @@ class Model(pl.LightningModule):
 
     def __init__(
         self,
-        data,
-        train_batch_size=2048,
-        valid_batch_size=1024,
-        print_every_epoch=1,
         latent_space_size=2,
         grid_size=128,
         kl_lambda=0.0,
@@ -170,13 +166,13 @@ class Model(pl.LightningModule):
         architecture=[64, 32],
         dx_prior=0.1,
         decoder_hidden=16,
-        criterion=nn.MSELoss(reduction='mean'),
-        last_activation=nn.Softplus(),
-        workers=3
+        criterion='mse',
+        last_activation='softplus',
+        **kwargs
     ):
         super().__init__()
-
         assert latent_space_size > 0
+        self.save_hyperparameters()
 
         print(
             "Model initializing with TI-VAE; "
@@ -184,40 +180,51 @@ class Model(pl.LightningModule):
         )
         print(f"dx_prior is {dx_prior:.02e}")
 
+        if self.hparams.criterion == 'mse':
+            self.criterion = nn.MSELoss(reduction='mean')
+        else:
+            raise ValueError(f"Unknown criterion: {criterion}")
+
+        if self.hparams.last_activation == 'softplus':
+            last_activation = nn.Softplus()
+        else:
+            raise ValueError(f"Unknown last activation {last_activation}")
+
         # Initialize the encoder
         self.encoder = Net(
-            grid_size, architecture, 2 * latent_space_size + 1,
+            self.hparams.grid_size,
+            self.hparams.architecture,
+            2 * self.hparams.latent_space_size + 1,
             last_activation=None
         )
 
         # Initialize the decoder
         self.decoder = DecoderNet(
-            latent_space_size, list(reversed(architecture)),
-            hidden=decoder_hidden, grid_size=grid_size,
+            self.hparams.latent_space_size,
+            list(reversed(self.hparams.architecture)),
+            hidden=self.hparams.decoder_hidden,
+            grid_size=self.hparams.grid_size,
             last_activation=last_activation
         )
 
-        self.criterion = criterion
-
         # Custom
-        self._X_train = data['train']
-        self._X_val = data['val']
-        self._latent_space_size = latent_space_size
-        self._print_every_epoch = print_every_epoch
+        self._print_every_epoch = kwargs.get("print_every_epoch", 1)
         self._epoch_dt = 0.0
-        self._kl_lambda = kl_lambda
-        self._kl_ramp_epochs = kl_ramp_epochs
-        if self._kl_ramp_epochs is not None:
+        self.hparams.kl_ramp_epochs = kl_ramp_epochs
+        if self.hparams.kl_ramp_epochs is not None:
             self._kl_ramp_strength = 0.0
         else:
             self._kl_ramp_strength = 1.0
-        self._dx_prior = dx_prior  # Control the overall strength of the shift
+
+    def set_data(self, data, train_batch_size, val_batch_size, workers):
+        self._X_train = data['train']
+        self._X_val = data['val']
         self._train_batch_size = train_batch_size
-        self._valid_batch_size = valid_batch_size
+        self._val_batch_size = val_batch_size
         self._workers = workers
 
     def _split_encoder_output(self, x):
-        x = x.reshape(-1, 2, self._latent_space_size)
+        x = x.reshape(-1, 2, self.hparams.latent_space_size)
 
         # Use the first set as the distributions
         mu = x[:, 0, :]
@@ -259,14 +266,15 @@ class Model(pl.LightningModule):
         ).expand(*x.shape)
 
         # Execute the shift and decode
-        _grid = _grid + self._dx_prior * dx.reshape(-1, 1)
+        _grid = _grid + self.hparams.dx_prior * dx.reshape(-1, 1)
         x_hat = self.decoder(_grid, z)
 
         # Compute losses
         mse_loss = self.criterion(x_hat, x)  # reduction = mean already applies
         kl_loss = vae_kl_loss(mu, log_var) / x.shape[0]
 
-        loss = self._kl_lambda * self._kl_ramp_strength * kl_loss + mse_loss
+        loss = self.hparams.kl_lambda * self._kl_ramp_strength * kl_loss \
+            + mse_loss
 
         # "loss" key is required; backprop is run on this object
         return {
@@ -305,9 +313,9 @@ class Model(pl.LightningModule):
             )
 
         # Ramp the kl_loss if necessary
-        if self._kl_ramp_epochs is not None:
+        if self.hparams.kl_ramp_epochs is not None:
             self._kl_ramp_strength = \
-                np.tanh(2.0 * epoch / self._kl_ramp_epochs)
+                np.tanh(2.0 * epoch / self.hparams.kl_ramp_epochs)
 
     def validation_step(self, batch, batch_idx):
         return self._single_forward_step(batch, batch_idx)
@@ -318,7 +326,9 @@ class Model(pl.LightningModule):
 
         lr = self.trainer.optimizers[0].param_groups[0]['lr']
         self.log('lr', lr, on_step=False, on_epoch=True)
-        self.log('kl_lambda', self._kl_lambda, on_step=False, on_epoch=True)
+        self.log(
+            'kl_lambda', self.hparams.kl_lambda, on_step=False, on_epoch=True
+        )
         self.log(
             'kl_ramp_strength', self._kl_ramp_strength,
             on_step=False, on_epoch=True
@@ -360,7 +370,7 @@ class Model(pl.LightningModule):
         print("val_dataloader called")
         ds = TensorDataset(self._X_val)
         return DataLoader(
-            ds, batch_size=self._valid_batch_size, num_workers=self._workers,
+            ds, batch_size=self._val_batch_size, num_workers=self._workers,
             persistent_workers=True, pin_memory=True
         )
 
@@ -374,21 +384,3 @@ class Model(pl.LightningModule):
                     "Early stopping criteria reached at "
                     f"epoch {epoch}/{self.trainer.max_epochs}"
                 )
-
-# class CustomTrainer(pl.Trainer):
-
-#     def __init__(self, *args, **kwargs):
-#         super().__init__(*args, **kwargs)
-
-#     def export_csv_log(self):
-#         path = Path(self.logger.experiment.log_dir) / Path("custom_metrics.csv")
-#         t = pd.DataFrame([d for d in self.logger.experiment.metrics if 'train_loss' in d])
-#         v = pd.DataFrame([d for d in self.logger.experiment.metrics if 'val_loss' in d])
-#         df = pd.concat([t, v], join='outer', axis=1)
-#         df = df.loc[:,~df.columns.duplicated()]
-#         df = df[[
-#             'epoch', 'train_loss', 'train_mse_loss', 'train_kl_loss',
-#             'val_loss', 'val_mse_loss', 'val_kl_loss', 'lr', 'kl_lambda',
-#             'kl_ramp_strength'
-#         ]]
-#         df.to_csv(path, index=False)
