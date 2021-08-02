@@ -208,7 +208,7 @@ class Model(pl.LightningModule):
         )
 
         # Custom
-        self._print_every_epoch = kwargs.get("print_every_epoch", 1)
+        self._print_every_epoch = 20
         self._epoch_dt = 0.0
         self.hparams.kl_ramp_epochs = kl_ramp_epochs
         if self.hparams.kl_ramp_epochs is not None:
@@ -219,8 +219,8 @@ class Model(pl.LightningModule):
     def set_data(self, data, train_batch_size, val_batch_size, workers):
         self._X_train = data['train']
         self._X_val = data['val']
-        self._train_batch_size = train_batch_size
-        self._val_batch_size = val_batch_size
+        self.hparams.train_batch_size = train_batch_size
+        self.hparams.val_batch_size = val_batch_size
         self._workers = workers
 
     def _split_encoder_output(self, x):
@@ -249,6 +249,23 @@ class Model(pl.LightningModule):
 
         # If not training, return just dx, the mean and standard deviation
         return dx, mu, torch.exp(0.5 * log_var)
+
+    def encode(self, x):
+        self.eval()
+        with torch.no_grad():
+            dx, mu, sd = self.forward(x, training=False)
+            return dx, mu, sd
+
+    def decode(self, dx, z):
+        self.eval()
+        with torch.no_grad():
+            if not isinstance(dx, torch.Tensor):
+                dx = torch.tensor(dx, device=self.device)
+            _grid = torch.linspace(
+                -1.0, 1.0, self.hparams.grid_size, device=self.device
+            ).expand(z.shape[0], self.hparams.grid_size)
+            _grid = _grid + self.hparams.dx_prior * dx.reshape(-1, 1)
+            return self.decoder(_grid, z)
 
     def _single_forward_step(self, batch, batch_index):
         """Executes a single forward pass given some batch and batch index.
@@ -362,7 +379,8 @@ class Model(pl.LightningModule):
         print("train_dataloader called")
         ds = TensorDataset(self._X_train)
         return DataLoader(
-            ds, batch_size=self._train_batch_size, num_workers=self._workers,
+            ds, batch_size=self.hparams.train_batch_size,
+            num_workers=self._workers,
             persistent_workers=True, pin_memory=True
         )
 
@@ -370,7 +388,8 @@ class Model(pl.LightningModule):
         print("val_dataloader called")
         ds = TensorDataset(self._X_val)
         return DataLoader(
-            ds, batch_size=self._val_batch_size, num_workers=self._workers,
+            ds, batch_size=self.hparams.val_batch_size,
+            num_workers=self._workers,
             persistent_workers=True, pin_memory=True
         )
 
