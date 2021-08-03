@@ -162,6 +162,9 @@ class Model(pl.LightningModule):
         decoder_hidden=32,
         criterion='mse',
         last_activation='softplus',
+        plateau_scheduler_patience=100,
+        plateau_scheduler_min_lr=1e-7,
+        plateau_scheduler_factor=0.95,
         **kwargs
     ):
         super().__init__()
@@ -365,7 +368,10 @@ class Model(pl.LightningModule):
             'optimizer': optimizer,
             'lr_scheduler': {
                 'scheduler': torch.optim.lr_scheduler.ReduceLROnPlateau(
-                    optimizer, patience=10, min_lr=1e-7, factor=0.95
+                    optimizer,
+                    patience=self.hparams.plateau_scheduler_patience,
+                    min_lr=self.hparams.plateau_scheduler_min_lr,
+                    factor=self.hparams.plateau_scheduler_factor
                 ),
                 'monitor': 'val_loss'
             }
