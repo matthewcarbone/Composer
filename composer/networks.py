@@ -325,7 +325,8 @@ class Model(pl.LightningModule):
             kl_loss = d['kl_loss']
             print(
                 f"\ttr tot/mse/kl loss: {loss:.03e} | {mse_loss:.03e}"
-                f" | {kl_loss:.03e} ({dt:.02f} s | {(dt/60.0):.02f} m)"
+                f" | {kl_loss:.03e} ({dt:.02f} s | {(dt/60.0):.02f} m)",
+                flush=True
             )
 
         # Ramp the kl_loss if necessary
