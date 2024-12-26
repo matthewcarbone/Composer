@@ -6,7 +6,7 @@ up:
     @just pull-models
 
 up-gpu:
-    docker compose -f compose.yaml -f configs/gpu/compose.yaml up ollama -d
+    docker compose -f compose.yaml -f configs/compose/gpu/compose.yaml up ollama -d
     @just pull-models
 
 down:
