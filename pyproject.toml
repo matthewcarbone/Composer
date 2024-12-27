@@ -5,6 +5,9 @@ description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
+    "langchain-community>=0.3.13",
+    "langchain-text-splitters>=0.3.4",
+    "langgraph>=0.2.60",
     "python-dotenv>=1.0.1",
 ]
 
