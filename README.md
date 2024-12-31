@@ -1,6 +1,9 @@
 # 𝄞 Composer
 🚀 Agentic AI sandbox
 
+> [!CAUTION]
+> This repository is a work in progress and is not stable. Expect breaking changes!
+
 > [!NOTE]
 > Usage of this repository relies on a few external tools, some required, some useful for convenience.
 > - uv for easily containerized environments. You should [install](https://docs.astral.sh/uv/getting-started/installation/) it before trying to use any of this code!
