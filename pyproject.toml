@@ -1,6 +1,5 @@
 [project]
 name = "composer"
-version = "0.1.0"
 description = "Add your description here"
 readme = "README.md"
 requires-python = ">=3.12"
@@ -23,16 +22,22 @@ dependencies = [
     "rapidocr-onnxruntime>=1.4.3",
     "xmltodict>=0.14.2",
 ]
+dynamic = ["version"]
+
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
+
+[tool.hatch.version]
+path = "composer/_version.py"
 
 [project.scripts]
 composer = "composer.entrypoint:entrypoint"
 
 [tool.ruff]
 line-length = 80
+exclude = ["composer/_version.py"]
 
 [tool.ruff.format]
 quote-style = "double"
