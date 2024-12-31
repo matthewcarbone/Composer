@@ -1,0 +1,6 @@
+obj:
+  _target_: composer.protocol.grantgist.GrantGistSummarize
+  _partial_: true
+
+config:
+  grants_dir: ${paths.data}/grantsgist

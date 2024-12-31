@@ -1,0 +1,5 @@
+fs_home: ${oc.env:HOME,null}
+home: ${paths.fs_home}/.composer-home
+data: ${paths.home}/data
+logs: ${paths.home}/logs
+memory: ${paths.home}/memory

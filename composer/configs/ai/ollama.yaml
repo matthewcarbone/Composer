@@ -1,0 +1,8 @@
+llm:
+  _target_: langchain_ollama.ChatOllama
+  model: llama3.2:3b
+  base_url: "http://localhost:11434"
+embeddings:
+  _target_: langchain_ollama.OllamaEmbeddings
+  model: mxbai-embed-large
+  base_url: "http://localhost:11434"

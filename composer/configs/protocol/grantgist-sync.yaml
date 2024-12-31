@@ -1,0 +1,9 @@
+obj:
+  _target_: composer.protocol.grantgist.GrantGistSync
+  _partial_: true
+
+config:
+  grants_dir: ${paths.data}/grantsgist
+  filename: GrantsDBExtract${date}v2
+  url_base: "https://prod-grants-gov-chatbot.s3.amazonaws.com/extracts"
+  index_from_post_date: "20240101" # Jan 1, 2024

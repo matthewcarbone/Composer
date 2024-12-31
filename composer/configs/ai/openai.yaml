@@ -1,0 +1,6 @@
+llm:
+  _target_: langchain_openai.ChatOpenAI
+  model: "gpt-4o-mini"
+embeddings:
+  _target_: langchain_openai.OpenAIEmbeddings
+  model: "text-embedding-3-large"

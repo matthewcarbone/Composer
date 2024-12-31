@@ -1,7 +1,9 @@
 defaults:
   - _self_
-  # - protocol: ???
-  - config: default.yaml
+  - protocol: ???
+  - paths: default.yaml
   - hydra: default.yaml
 
-name: scratch
+dryrun: false
+
+date: ${now:%Y%m%d}
