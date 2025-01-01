@@ -33,4 +33,4 @@ serve-jupyter:
     uv run --with=ipython,jupyterlab,matplotlib,seaborn,h5netcdf,netcdf4,scikit-learn,scipy,xarray,"nbconvert==5.6.1" jupyter lab --notebook-dir="~"
 
 run-ipython:
-    uv run ipython
+    uv run --with=ipython ipython
