@@ -1,0 +1,4 @@
+grants_dir: ${paths.data}/grantsgist
+min_date: null
+max_date: ${today}
+

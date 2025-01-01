@@ -4,12 +4,15 @@ import zipfile
 from collections import defaultdict
 from dataclasses import dataclass
 from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 
 import requests
 import xmltodict
+from dateutil.relativedelta import relativedelta
 from httpx import ConnectError
-from joblib import Memory
+
+# from joblib import Memory
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import DirectoryLoader, JSONLoader
 from omegaconf.dictconfig import DictConfig
@@ -20,46 +23,97 @@ from composer.global_state import get_memory_dir
 from composer.utils import Timer
 
 logger = logging.getLogger(__name__)
-memory = Memory(location=get_memory_dir(), verbose=1)
-logger.debug(f"joblib.Memory: {memory}")
+# memory = Memory(location=get_memory_dir(), verbose=1)
+# logger.debug(f"joblib.Memory: {memory}")
 
 
 @dataclass
-class GrantGistSync:
-    """Handles grants.gov interface."""
-
+class GrantsGist:
     hydra_conf: DictConfig
 
-    @property
-    def filename(self):
-        return self.hydra_conf.protocol.config.filename
+    @cached_property
+    def today(self) -> str:
+        today_str = str(self.hydra_conf.today)
+        logger.debug(f"today property accessed; returning {today_str}")
+        return today_str
 
-    @property
-    def url_base(self):
-        return self.hydra_conf.protocol.config.url_base
+    @cached_property
+    def max_date_dt(self) -> datetime:
+        date = self.hydra_conf.protocol.config.max_date
+        max_dt = datetime.strptime(date, "%Y%m%d")
+        logger.debug(
+            f"max_date_dt property accessed; raw config={date}, parsed={max_dt}"
+        )
+        return max_dt
 
-    @property
+    @cached_property
+    def min_date_dt(self) -> datetime:
+        date = self.hydra_conf.protocol.config.min_date
+        if date is None:
+            logger.info(
+                "min_date not provided; defaulting to 3 months prior to max date"
+            )
+            default_min_dt = self.max_date_dt - relativedelta(months=3)
+            logger.debug(f"Computed default min_date_dt={default_min_dt}")
+            return default_min_dt
+        parsed_dt = datetime.strptime(date, "%Y%m%d")
+        logger.debug(
+            f"min_date_dt property accessed; parsed min_date_dt={parsed_dt}"
+        )
+        return parsed_dt
+
+    @cached_property
     def grants_dir(self):
         g = self.hydra_conf.protocol.config.grants_dir
+        # Make sure directory exists
         Path(g).mkdir(exist_ok=True, parents=True)
+        logger.debug(f"Ensured grants_dir exists at {g}")
         return g
 
-    @property
-    def filename_full_path_as_xml(self):
-        return str(Path(self.grants_dir) / self.filename) + ".xml"
 
-    @property
-    def filename_full_path_as_zip(self):
-        return str(Path(self.grants_dir) / self.filename) + ".zip"
+class GrantGistSync(GrantsGist):
+    """Handles interfacing to grants.gov and pulling the targeted xml extract files."""
 
-    @property
-    def url_target(self):
-        return f"{self.url_base}/{self.filename}.zip"
+    @cached_property
+    def filename(self) -> str:
+        filename = self.hydra_conf.protocol.config.filename
+        logger.debug(f"filename property accessed; returning {filename}")
+        return filename
 
-    def pull_and_unzip(self):
+    @cached_property
+    def url_base(self) -> str:
+        url_base = self.hydra_conf.protocol.config.url_base
+        logger.debug(f"url_base property accessed; returning {url_base}")
+        return url_base
+
+    @cached_property
+    def filename_full_path_as_xml(self) -> str:
+        path_as_xml = str(Path(self.grants_dir) / self.filename) + ".xml"
+        logger.debug(
+            f"filename_full_path_as_xml property accessed; returning {path_as_xml}"
+        )
+        return path_as_xml
+
+    @cached_property
+    def filename_full_path_as_zip(self) -> str:
+        path_as_zip = str(Path(self.grants_dir) / self.filename) + ".zip"
+        logger.debug(
+            f"filename_full_path_as_zip property accessed; returning {path_as_zip}"
+        )
+        return path_as_zip
+
+    @cached_property
+    def url_target(self) -> str:
+        url = f"{self.url_base}/{self.filename}.zip"
+        logger.debug(f"url_target property accessed; returning {url}")
+        return url
+
+    def pull_and_unzip(self) -> None:
+        # If XML file already exists, skip the download step
         if Path(self.filename_full_path_as_xml).exists():
-            f = self.filename_full_path_as_xml
-            logger.info(f"Done: pull_and_unzip: xml file ({f}) already exists")
+            logger.info(
+                f"Done: pull_and_unzip: XML file ({self.filename_full_path_as_xml}) already exists"
+            )
             return
         else:
             logger.info(f"Pulling data from {self.url_target}")
@@ -70,37 +124,48 @@ class GrantGistSync:
                     if chunk:
                         f.write(chunk)
             logger.info(f"Zip file saved to {self.filename_full_path_as_zip}")
+
+            # Extract the zip file
+            logger.debug(
+                f"Extracting zip file from {self.filename_full_path_as_zip}..."
+            )
             with zipfile.ZipFile(self.filename_full_path_as_zip, "r") as zf:
                 zf.extractall(self.grants_dir)
-            logger.info(f"Zip file extracted in {self.grants_dir}")
+            logger.info(f"Zip file extracted into {self.grants_dir}")
+
         logger.info("Done: pull_and_unzip")
 
     def create_json_store(self):
-        min_date = str(self.hydra_conf.protocol.config.index_from_post_date)
-        min_date = datetime.strptime(min_date, "%Y%m%d")
-        logger.info(f"Creating json store indexing from date: {min_date}")
+        # Time reading and parsing of the XML file
         with Timer() as timer:
             with open(self.filename_full_path_as_xml) as file:
                 data = file.read()
-        logger.info(f"Read xml file into memory in {timer.dt:.02f} s")
+        logger.info(f"Read XML file into memory in {timer.dt:.02f} s")
 
-        # Convert the xml file to dictionary
-        # TODO: there has to be a more efficient way to do this, I'm just
-        # not that comfortable with xml
+        # Convert XML to dictionary
         with Timer() as timer:
             d = xmltodict.parse(data)
-        logger.info(f"Parsed xml file to dictionary in {timer.dt:.02f} s")
+        logger.info(f"Parsed XML file to dictionary in {timer.dt:.02f} s")
 
+        # Organize items by PostDate
         d_by_post_date = defaultdict(list)
-        for item in d["Grants"]["OpportunitySynopsisDetail_1_0"]:
+        items = d["Grants"]["OpportunitySynopsisDetail_1_0"]
+        logger.debug(f"Found {len(items)} items in the XML structure")
+
+        for item in items:
             dt = datetime.strptime(item["PostDate"], "%m%d%Y")
-            if dt < min_date:
+            # Filter out-of-range items
+            if dt < self.min_date_dt or dt > self.max_date_dt:
+                logger.debug(
+                    f"Skipping item with PostDate={dt} (outside range {self.min_date_dt} - {self.max_date_dt})"
+                )
                 continue
-            sane_date = dt.strftime("%Y%m%d")  # sane format
+            sane_date = dt.strftime("%Y%m%d")  # a consistent format
             d_by_post_date[sane_date].append(item)
 
-        # Write all the json files
+        # Write all JSON files
         counter = 0
+        logger.debug("Writing JSON files to grants_dir...")
         for key, list_of_opportunities in d_by_post_date.items():
             for opportunity in list_of_opportunities:
                 opportunity_id = opportunity["OpportunityID"]
@@ -109,85 +174,102 @@ class GrantGistSync:
                 with open(filename, "w") as f:
                     json.dump(opportunity, f, indent=4, sort_keys=True)
                 counter += 1
-        logger.info(f"Done: create_json_store (wrote {counter} json files)")
+
+        logger.info(f"Done: create_json_store (wrote {counter} JSON files)")
 
     def cleanup(self):
-        to_unlink = list(Path(self.grants_dir).glob("*.zip")) + list(
-            Path(self.grants_dir).glob("*.xml")
-        )
-        for path in to_unlink:
-            if str(path) == self.filename_full_path_as_xml:
-                continue
+        # Remove any .zip files
+        for path in Path(self.grants_dir).glob("*.zip"):
             logger.info(f"Cleaning up: unlinking {path}")
             path.unlink()
+
+        # Remove any .xml files
+        for path in Path(self.grants_dir).glob("*.xml"):
+            logger.info(f"Cleaning up: unlinking {path}")
+            path.unlink()
+
         logger.info("Done: cleanup")
 
-    def execute(self):
+    def run(self):
+        logger.info("Starting GrantGistSync run workflow...")
         self.pull_and_unzip()
         self.create_json_store()
         self.cleanup()
+        logger.info("GrantGistSync run workflow complete.")
 
 
-@memory.cache
-def load_all_json(date, target_dir):
+def load_all_json(target_dir):
     """Loads all json files in the `target_directory` into a docs format.
     Note that the function is cached by date, so loading is quite fast after
     the first time. Joblib Memory is used to cache the results to disk as
     pickle files."""
 
-    loader = DirectoryLoader(
-        path=target_dir,
-        glob="*.json",
-        loader_cls=JSONLoader,
-        loader_kwargs={"jq_schema": ".", "text_content": False},
-    )
-    files = loader.load()
-    logger.info(f"Total {len(files)} json files loaded for {date}")
+    with Timer() as timer:
+        loader = DirectoryLoader(
+            path=target_dir,
+            glob="*.json",
+            loader_cls=JSONLoader,
+            loader_kwargs={"jq_schema": ".", "text_content": False},
+        )
+        files = loader.load()
+    dt = f"{timer.dt:.02f}"
+    logger.info(f"Total {len(files)} json files loaded in {dt} s")
     return files
 
 
-@memory.cache(ignore=["docs", "embeddings"])
-def build_and_persist_vector_store(date, docs, embeddings, embeddings_name):
+def load_vector_store(date, docs, embeddings, embeddings_name):
     collection_name = f"grantgist_vector_store_{embeddings_name}_{date}"
     vector_store = Chroma(
         collection_name=collection_name,
         embedding_function=embeddings,
         persist_directory=get_memory_dir(),
     )
-    vector_store.add_documents(documents=docs)
-    logger.info("Vector store created")
-    return collection_name
-
-
-def load_vector_store(date, docs, embeddings, embeddings_name):
-    collection_name = build_and_persist_vector_store(
-        date, docs, embeddings, embeddings_name
-    )
-    vector_store = Chroma(
-        collection_name=collection_name,
-        embedding_function=embeddings,
-        persist_directory=get_memory_dir(),
-    )
+    vs_sources = set()
+    all_data = vector_store._collection.get()
+    for metadata in all_data["metadatas"]:
+        source = metadata["source"]
+        source = str(Path(source).stem)
+        vs_sources.add(source)
+    logger.info(f"Passing {len(docs)} docs to load_vector_store")
+    docs_to_add = [
+        d
+        for d in docs
+        if str(Path(d.metadata["source"]).stem) not in vs_sources
+    ]
+    logger.info(f"{len(docs_to_add)} docs not already in vector store")
+    if len(docs_to_add) > 0:
+        vector_store.add_documents(documents=docs_to_add)
+        logger.info("Added new docs to vector store")
+    else:
+        logger.info("No new docs to add")
     return vector_store
 
 
-@dataclass
-class GrantGistSummarize:
-    hydra_conf: DictConfig
+class GrantGistIndex(GrantsGist):
+    @property
+    def min_date(self):
+        return self.hydra_conf.protocol.config.min_date
 
     @property
-    def grants_dir(self) -> str:
-        g = self.hydra_conf.protocol.config.grants_dir
-        if not Path(g).exists():
-            logger.error(f"grantgist directory does not exist, run sync")
+    def max_date(self):
+        return self.hydra_conf.protocol.config.max_date
+
+    def run(self):
+        try:
+            embeddings = self.hydra_conf.ai.embeddings
+        except ConfigAttributeError as error:
+            logger.critical(
+                "ai key not found - you probably need to use +ai=ollama, "
+                "or something like that when calling composer. Full error: "
+                f"\n{error}"
+            )
             exit(1)
-        return g
 
-    @property
-    def date(self) -> str:
-        return str(self.hydra_conf.date)
+        docs = load_all_json(self.grants_dir)
 
-    def execute(self):
+
+class GrantGistSummarize(GrantsGist):
+    def run(self):
         try:
             llm = self.hydra_conf.ai.llm
             embeddings = self.hydra_conf.ai.embeddings
@@ -198,12 +280,15 @@ class GrantGistSummarize:
                 f"\n{error}"
             )
             exit(1)
-        docs = load_all_json(self.date, self.grants_dir)
+        docs = load_all_json(self.grants_dir)
+        for doc in docs:
+            doc_metadata_source = doc.metadata["source"]
+            logger.debug(f"Loading doc from {doc_metadata_source}")
         logger.info("Initialilzing vector store...")
         embeddings_name = self.hydra_conf.ai.embeddings.model
         try:
             vector_store = load_vector_store(
-                self.date, docs, embeddings, embeddings_name
+                self.today, docs, embeddings, embeddings_name
             )
         except ConnectError as error:
             logger.critical(
@@ -225,7 +310,7 @@ class GrantGistSummarize:
                     ),
                     (
                         "human",
-                        "Give me a summary of all grants related to rabbits.",
+                        "Are there any recently posted grants about workforce development? Pay particular attention to RENEW grants.",
                     ),
                 ]
             },

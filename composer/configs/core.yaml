@@ -6,4 +6,6 @@ defaults:
 
 dryrun: false
 
-date: ${now:%Y%m%d}
+# Used to pull the latest information at all times
+today: ${now:%Y%m%d}
+

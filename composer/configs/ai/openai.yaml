@@ -1,6 +1,7 @@
 llm:
   _target_: langchain_openai.ChatOpenAI
   model: "gpt-4o-mini"
+  temperature: 0.0
 embeddings:
   _target_: langchain_openai.OpenAIEmbeddings
   model: "text-embedding-3-large"

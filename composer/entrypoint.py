@@ -11,7 +11,7 @@ def run(hydra_conf):
     global_state.set_memory_dir(hydra_conf.paths.memory)
     hydra_conf = hydra.utils.instantiate(hydra_conf)
     logger.debug(f"hydra_conf: \n{hydra_conf}")
-    hydra_conf.protocol.obj(hydra_conf).execute()
+    hydra_conf.protocol.obj(hydra_conf).run()
 
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="core.yaml")
