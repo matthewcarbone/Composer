@@ -26,3 +26,59 @@ Then, query.
 ```bash
 uv run composer protocol=grantgist-summarize +ai=openai
 ```
+
+## Full example
+
+Create JSON store for all grants from January 1, 2024 until the present.
+
+```bash
+uv run composer protocol=grantgist-sync protocol.config.min_date=20240101
+```
+
+Create the vector store using your model of choice (defaults to `text-embedding-3-small`, details [here](https://openai.com/api/pricing/), when using OpenAI).
+
+```bash
+uv run composer protocol=grantgist-index +ai=openai
+```
+
+Query the model.
+
+```bash
+uv run composer protocol=grantgist-summarize +ai=openai +ai.prompt="Tell me about RENEW grants in the database. RENEW stands for Reaching a New Energy Sciences Workforce."
+```
+
+Only including the model response here, ignoring all the logs and whatnot.
+
+```
+The RENEW grants, which stand for **Reaching a New Energy Sciences Workforce**, are aimed at building foundations for research through traineeships at academic institutions that have historically been underrepresented in the Department of Energy's (DOE) Office of Science (SC) portfolio. Below are key highlights regarding the RENEW grants:
+
+### Key Details of the RENEW Grants
+- **Opportunity Title**: FY 2024 Reaching a New Energy Sciences Workforce (RENEW)
+- **Opportunity Number**: DE-FOA-0003280
+- **Agency**: Office of Science, U.S. Department of Energy
+- **Funding Instrument**: Grant
+- **Estimated Total Program Funding**: $50,000,000
+- **Expected Number of Awards**: Approximately 30
+- **Award Ceiling**: $2,250,000
+- **Award Floor**: $100,000
+- **Close Date for Applications**: July 23, 2024
+- **Cost Sharing or Matching Requirement**: No
+
+### Purpose
+The RENEW grant program aims to support traineeships for students and postdoctoral researchers from non-R1 Emerging Research Institutions (ERIs) and non-R1 Minority Serving Institutions (MSIs) in areas relevant to SC programs. The program leverages unique national laboratories, user facilities, and other research infrastructure to provide hands-on training opportunities.
+
+### Traineeships
+- Traineeships are designed to provide meaningful research experiences and professional development opportunities for participants.
+- Undergraduates must engage in hands-on research to understand the research process, while graduate students and postdoctoral researchers should be involved in more advanced research activities.
+- The program encourages involvement in various complementary activities to foster a sense of belonging and reinforce STEM identity.
+
+### Eligibility
+- Applications must be led by either a non-R1 ERI or a non-R1 MSI.
+- Domestic entities can be proposed as team members, either as subrecipients or via a collaborative application process.
+
+### Additional Information
+- **Contact Email**: sc.renew@science.doe.gov
+- For more details, you can visit the [RENEW Initiative website](https://science.osti.gov/Initiatives/RENEW).
+
+This grant represents a significant opportunity for institutions looking to enhance their research capabilities and support underrepresented groups in energy sciences.
+```
