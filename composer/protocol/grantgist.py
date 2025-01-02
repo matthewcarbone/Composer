@@ -388,6 +388,7 @@ class GrantGistIndex(GrantsGist):
 class GrantGistSummarize(GrantsGist):
     def run(self):
         vector_store = load_vector_store(self.hydra_conf)
+        prompt = self.hydra_conf.ai.prompt
         llm = self.hydra_conf.ai.llm
         app = get_tool_agent(llm, vector_store)
 
@@ -396,11 +397,11 @@ class GrantGistSummarize(GrantsGist):
                 "messages": [
                     (
                         "system",
-                        "You are an expert grant-writer, specializing in Department of Energy (EN) grants. When asked for summaries or asked questions, you will focus on Department of Energy grants primarily, unless explicitly asked to give feedback for all Government departments. If you don't feel that there are any relevant grants related to the question, please say so.",
+                        "You are an expert grant-writer. If you don't feel that there are any relevant grants related to the question, please say so. When possible, provide the specific FOA/NOFO # of the grant you refer to in your response.",
                     ),
                     (
                         "human",
-                        "Tell me about the grant with announcement number DE-FOA-0003280.",
+                        prompt,
                     ),
                 ]
             },

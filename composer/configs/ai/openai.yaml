@@ -1,7 +1,11 @@
 llm:
   _target_: langchain_openai.ChatOpenAI
   model: "gpt-4o-mini"
-  temperature: 0.0
 embeddings:
   _target_: langchain_openai.OpenAIEmbeddings
-  model: "text-embedding-3-large"
+  model: "text-embedding-3-small"
+  retry_min_seconds: 60
+  retry_max_seconds: 120
+  show_progress_bar: true
+  chunk_size: 1000
+prompt: ???
