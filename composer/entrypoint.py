@@ -2,13 +2,13 @@ import logging
 
 import hydra
 
-from composer import global_state
+# from composer import global_state
 
 logger = logging.getLogger(__name__)
 
 
 def run(hydra_conf):
-    global_state.set_memory_dir(hydra_conf.paths.memory)
+    # global_state.set_memory_dir(hydra_conf.paths.memory)
     hydra_conf = hydra.utils.instantiate(hydra_conf)
     logger.debug(f"hydra_conf: \n{hydra_conf}")
     hydra_conf.protocol.obj(hydra_conf).run()

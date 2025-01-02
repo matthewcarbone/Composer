@@ -7,6 +7,7 @@ from datetime import datetime
 from functools import cached_property
 from pathlib import Path
 
+import chromadb
 import requests
 import xmltodict
 from dateutil.relativedelta import relativedelta
@@ -20,7 +21,7 @@ from omegaconf.errors import ConfigAttributeError
 
 from composer.ai.tools import get_tool_agent
 from composer.global_state import get_memory_dir
-from composer.utils import Timer
+from composer.utils import Timer, get_file_hash
 
 logger = logging.getLogger(__name__)
 # memory = Memory(location=get_memory_dir(), verbose=1)
@@ -48,7 +49,7 @@ class GrantsGist:
 
     @cached_property
     def min_date_dt(self) -> datetime:
-        date = self.hydra_conf.protocol.config.min_date
+        date = str(self.hydra_conf.protocol.config.min_date)
         if date is None:
             logger.info(
                 "min_date not provided; defaulting to 3 months prior to max date"
@@ -63,11 +64,17 @@ class GrantsGist:
         return parsed_dt
 
     @cached_property
-    def grants_dir(self):
-        g = self.hydra_conf.protocol.config.grants_dir
-        # Make sure directory exists
+    def data_dir(self) -> str:
+        g = self.hydra_conf.protocol.config.data_dir
         Path(g).mkdir(exist_ok=True, parents=True)
-        logger.debug(f"Ensured grants_dir exists at {g}")
+        logger.debug(f"Ensured data dir exists at {g}")
+        return g
+
+    @cached_property
+    def chroma_dir(self) -> str:
+        g = self.hydra_conf.protocol.config.chroma_dir
+        Path(g).mkdir(exist_ok=True, parents=True)
+        logger.debug(f"Ensured chroma dir exists at {g}")
         return g
 
 
@@ -88,7 +95,7 @@ class GrantGistSync(GrantsGist):
 
     @cached_property
     def filename_full_path_as_xml(self) -> str:
-        path_as_xml = str(Path(self.grants_dir) / self.filename) + ".xml"
+        path_as_xml = str(Path(self.data_dir) / self.filename) + ".xml"
         logger.debug(
             f"filename_full_path_as_xml property accessed; returning {path_as_xml}"
         )
@@ -96,7 +103,7 @@ class GrantGistSync(GrantsGist):
 
     @cached_property
     def filename_full_path_as_zip(self) -> str:
-        path_as_zip = str(Path(self.grants_dir) / self.filename) + ".zip"
+        path_as_zip = str(Path(self.data_dir) / self.filename) + ".zip"
         logger.debug(
             f"filename_full_path_as_zip property accessed; returning {path_as_zip}"
         )
@@ -130,8 +137,8 @@ class GrantGistSync(GrantsGist):
                 f"Extracting zip file from {self.filename_full_path_as_zip}..."
             )
             with zipfile.ZipFile(self.filename_full_path_as_zip, "r") as zf:
-                zf.extractall(self.grants_dir)
-            logger.info(f"Zip file extracted into {self.grants_dir}")
+                zf.extractall(self.data_dir)
+            logger.info(f"Zip file extracted into {self.data_dir}")
 
         logger.info("Done: pull_and_unzip")
 
@@ -165,12 +172,12 @@ class GrantGistSync(GrantsGist):
 
         # Write all JSON files
         counter = 0
-        logger.debug("Writing JSON files to grants_dir...")
+        logger.debug("Writing JSON files to root...")
         for key, list_of_opportunities in d_by_post_date.items():
             for opportunity in list_of_opportunities:
                 opportunity_id = opportunity["OpportunityID"]
                 filename = f"{key}-{opportunity_id}.json"
-                filename = Path(self.grants_dir) / filename
+                filename = Path(self.data_dir) / filename
                 with open(filename, "w") as f:
                     json.dump(opportunity, f, indent=4, sort_keys=True)
                 counter += 1
@@ -179,12 +186,12 @@ class GrantGistSync(GrantsGist):
 
     def cleanup(self):
         # Remove any .zip files
-        for path in Path(self.grants_dir).glob("*.zip"):
+        for path in Path(self.data_dir).glob("*.zip"):
             logger.info(f"Cleaning up: unlinking {path}")
             path.unlink()
 
         # Remove any .xml files
-        for path in Path(self.grants_dir).glob("*.xml"):
+        for path in Path(self.data_dir).glob("*.xml"):
             logger.info(f"Cleaning up: unlinking {path}")
             path.unlink()
 
@@ -200,9 +207,14 @@ class GrantGistSync(GrantsGist):
 
 def load_all_json(target_dir):
     """Loads all json files in the `target_directory` into a docs format.
-    Note that the function is cached by date, so loading is quite fast after
-    the first time. Joblib Memory is used to cache the results to disk as
-    pickle files."""
+    Note that the function is cached by date, so loading is quite fast
+    after the first time. Joblib Memory is used to cache the results to
+    disk as pickle files."""
+
+    logger.debug(f"Starting load_all_json for target_dir={target_dir}")
+    if not Path(target_dir).exists():
+        logger.warning(f"Target directory does not exist: {target_dir}")
+        return []
 
     with Timer() as timer:
         loader = DirectoryLoader(
@@ -212,93 +224,171 @@ def load_all_json(target_dir):
             loader_kwargs={"jq_schema": ".", "text_content": False},
         )
         files = loader.load()
+
     dt = f"{timer.dt:.02f}"
-    logger.info(f"Total {len(files)} json files loaded in {dt} s")
+    logger.info(
+        f"Total {len(files)} JSON files loaded from '{target_dir}' in {dt} s"
+    )
+    logger.debug("Finished load_all_json")
     return files
 
 
-def load_vector_store(date, docs, embeddings, embeddings_name):
-    collection_name = f"grantgist_vector_store_{embeddings_name}_{date}"
+def _instantiate_vector_store(
+    embeddings, embeddings_name, persist_directory, docs=None
+):
+    """Loads or updates a Chroma vector store for given embedding type
+    - Checks which docs are already present in the store
+    - Adds new docs as needed
+    """
+
+    collection_name = f"grantgist_vector_store_{embeddings_name}"
+    logger.info(
+        f"Vector store collection {collection_name} in {persist_directory}"
+    )
+
+    client_settings = chromadb.Settings(
+        is_persistent=True,
+        persist_directory=persist_directory,
+        anonymized_telemetry=False,
+    )
+
     vector_store = Chroma(
         collection_name=collection_name,
         embedding_function=embeddings,
-        persist_directory=get_memory_dir(),
+        client_settings=client_settings,
     )
-    vs_sources = set()
-    all_data = vector_store._collection.get()
-    for metadata in all_data["metadatas"]:
-        source = metadata["source"]
-        source = str(Path(source).stem)
-        vs_sources.add(source)
-    logger.info(f"Passing {len(docs)} docs to load_vector_store")
-    docs_to_add = [
-        d
-        for d in docs
-        if str(Path(d.metadata["source"]).stem) not in vs_sources
-    ]
-    logger.info(f"{len(docs_to_add)} docs not already in vector store")
-    if len(docs_to_add) > 0:
-        vector_store.add_documents(documents=docs_to_add)
-        logger.info("Added new docs to vector store")
-    else:
-        logger.info("No new docs to add")
+
+    all_data = vector_store.get()
+    L = len(all_data["ids"])
+    logger.info(f"Total {L} documents in vector store")
+
+    if docs is not None:
+        # Print debug for each doc
+        for doc in docs:
+            doc_metadata_source = doc.metadata["source"]
+            json_hash = get_file_hash(doc_metadata_source)
+            doc.metadata["hash"] = json_hash
+            logger.debug(
+                f"Processing doc with source: {doc_metadata_source} "
+                f"file hash {json_hash}"
+            )
+
+        # Determine which doc sources are already in the store
+        vs_sources = {}
+        for _metadata, _id in zip(all_data["metadatas"], all_data["ids"]):
+            source = _metadata["source"]
+            file_hash = _metadata["hash"]
+            source_stem = str(Path(source).stem)
+            vs_sources[source_stem] = (file_hash, _id)
+            logger.debug(
+                f"Data with source {source_stem} and hash (id) {file_hash} "
+                f"({_id}) in db"
+            )
+        logger.debug(
+            f"Found {len(vs_sources)} sources in existing vector store."
+        )
+
+        # Filter out docs that already exist
+        new_docs_to_add = []
+        docs_to_remove = []
+        for d in docs:
+            source = str(Path(d.metadata["source"]).stem)
+            file_hash = d.metadata["hash"]
+            if source not in vs_sources.keys():
+                new_docs_to_add.append(d)
+                logger.debug(f"Doc {source} not in db, adding")
+                continue
+            (vs_hash, _id) = vs_sources[source]
+            if vs_hash != file_hash:
+                new_docs_to_add.append(d)
+                docs_to_remove.append(_id)
+                logger.warning(f"Doc {source} has changed and will be replaced")
+
+        logger.info(
+            f"Parsing {len(docs)} docs to load_vector_store; "
+            f"{len(new_docs_to_add)} are new and will be added."
+        )
+
+        if len(docs_to_remove) > 0:
+            logger.info(
+                f"Deleting {len(docs_to_remove)} documents from vector store"
+            )
+            logger.debug(f"Deleting {docs_to_remove}")
+            vector_store.delete(ids=docs_to_remove)
+
+        if len(new_docs_to_add) > 0:
+            vector_store.add_documents(documents=new_docs_to_add)
+            logger.info("Added new docs to vector store.")
+        else:
+            logger.info("No new docs to add.")
+
+        logger.debug("Finished load_vector_store")
     return vector_store
 
 
+def update_vector_store(docs, hydra_conf):
+    # Attempt to retrieve embeddings from Hydra config
+    try:
+        embeddings = hydra_conf.ai.embeddings
+    except ConfigAttributeError as error:
+        logger.error(
+            "ConfigAttributeError - issue with accessing a hydra key. "
+            "ai key not found - you probably need to use +ai=ollama, "
+            "or something like that when calling composer. Full error: "
+            f"\n{error}"
+        )
+        exit(1)
+
+    # Prepare vector store
+    logger.info("Initializing vector store...")
+    embeddings_name = hydra_conf.ai.embeddings.model
+    try:
+        vector_store = _instantiate_vector_store(
+            embeddings,
+            embeddings_name,
+            hydra_conf.protocol.config.chroma_dir,
+            docs=docs,
+        )
+    except ConnectError as error:
+        logger.error(
+            "Connection via httpx refused using ai object "
+            f"{hydra_conf.ai.embeddings}. You likely forgot to spin up an "
+            "ollama server, or perhaps you forgot to port forward to an "
+            f"external server. Full error:\n{error}"
+        )
+        exit(1)
+
+    return vector_store
+
+
+def load_vector_store(hydra_conf):
+    return update_vector_store(docs=None, hydra_conf=hydra_conf)
+
+
 class GrantGistIndex(GrantsGist):
-    @property
-    def min_date(self):
-        return self.hydra_conf.protocol.config.min_date
-
-    @property
-    def max_date(self):
-        return self.hydra_conf.protocol.config.max_date
-
     def run(self):
-        try:
-            embeddings = self.hydra_conf.ai.embeddings
-        except ConfigAttributeError as error:
-            logger.critical(
-                "ai key not found - you probably need to use +ai=ollama, "
-                "or something like that when calling composer. Full error: "
-                f"\n{error}"
-            )
-            exit(1)
+        """Run the indexing process:
+        - Attempt to get embeddings from Hydra config
+        - Load all JSON files
+        - Print debug for each doc
+        - Initialize vector store
+        - Handle any connection errors
+        """
+        logger.info("Starting GrantGistIndex.run()")
 
-        docs = load_all_json(self.grants_dir)
+        # Load JSON documents
+        docs = load_all_json(self.data_dir)
+        logger.debug(f"Loaded {len(docs)} docs in GrantGistIndex.run()")
+
+        # Update the vector store
+        update_vector_store(docs, self.hydra_conf)
+        logger.info("GrantGistIndex.run() complete.")
 
 
 class GrantGistSummarize(GrantsGist):
     def run(self):
-        try:
-            llm = self.hydra_conf.ai.llm
-            embeddings = self.hydra_conf.ai.embeddings
-        except ConfigAttributeError as error:
-            logger.critical(
-                "ai key not found - you probably need to use +ai=ollama, "
-                "or something like that when calling composer. Full error: "
-                f"\n{error}"
-            )
-            exit(1)
-        docs = load_all_json(self.grants_dir)
-        for doc in docs:
-            doc_metadata_source = doc.metadata["source"]
-            logger.debug(f"Loading doc from {doc_metadata_source}")
-        logger.info("Initialilzing vector store...")
-        embeddings_name = self.hydra_conf.ai.embeddings.model
-        try:
-            vector_store = load_vector_store(
-                self.today, docs, embeddings, embeddings_name
-            )
-        except ConnectError as error:
-            logger.critical(
-                "Connection via httpx refused using ai object "
-                f"{self.hydra_conf.ai.embeddings}. You likely forgot to spin up an "
-                "ollama server, or perhaps you forgot to port forward to an "
-                f"external server. Full error: \n{error}"
-            )
-            exit(1)
-
+        vector_store = load_vector_store(self.hydra_conf)
+        llm = self.hydra_conf.ai.llm
         app = get_tool_agent(llm, vector_store)
 
         for chunk in app.stream(
@@ -310,7 +400,7 @@ class GrantGistSummarize(GrantsGist):
                     ),
                     (
                         "human",
-                        "Are there any recently posted grants about workforce development? Pay particular attention to RENEW grants.",
+                        "Tell me about the grant with announcement number DE-FOA-0003280.",
                     ),
                 ]
             },

@@ -8,7 +8,7 @@ def get_tool_agent(model, vector_store):
     def retrieve(query: str):
         """Retrieve information related to a query. Use this whenever a question that is scientific in nature is asked."""
 
-        retrieved_docs = vector_store.similarity_search(query, k=4)
+        retrieved_docs = vector_store.similarity_search(query, k=2)
         serialized = "\n\n".join(
             (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}")
             for doc in retrieved_docs
