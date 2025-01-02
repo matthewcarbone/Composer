@@ -11,21 +11,16 @@ This resulting XML file can then be easily parsed using Python into individual J
 
 In this example, I've written some simple code to pull the latest information from grants.gov, create a vector store, then use that vector store for simple RAG:
 
-First, pull the latest XML file, and create all JSON files.
+First, pull the latest XML file, and create all JSON files and the Chroma vector store. Then, query.
 ```bash
 uv run composer protocol=grantgist-sync
+uv run composer protocol=grantgist-index +ai=openai
+uv run composer protocol=grantgist-summarize +ai=openai +ai.prompt="..."
 ```
 
-Then, query.
 > [!CAUTION]
 > Using OpenAI as a backend can potentially be expensive. Creating the vector store for ~800 grants cost roughly $0.08. Obviously that alone is not very expensive, but it can add up quickly. Use at your own risk!
 
-> [!NOTE]
-> This is a constant work in progress, and I currently have hardcoded the query just for the sake of demonstration.
-
-```bash
-uv run composer protocol=grantgist-summarize +ai=openai
-```
 
 ## Full example
 
