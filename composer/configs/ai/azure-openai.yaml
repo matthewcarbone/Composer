@@ -2,9 +2,8 @@
 llm:
   _target_: langchain_openai.AzureChatOpenAI
   deployment_name: use4o
-  openai_api_version: 2023-12-01-preview 
+  openai_api_version: 2024-10-21
 embeddings:
   _target_: langchain_openai.AzureOpenAIEmbeddings
   deployment: initialAda002
-  openai_api_version: 2023-12-01-preview 
-
+  openai_api_version: 2024-10-21
