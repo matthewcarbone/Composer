@@ -5,6 +5,6 @@ llm:
   openai_api_version: 2023-12-01-preview 
 embeddings:
   _target_: langchain_openai.AzureOpenAIEmbeddings
-  deployment: text-embedding-ada-002
+  deployment: initialAda002
   openai_api_version: 2023-12-01-preview 
 
