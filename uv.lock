@@ -380,6 +380,7 @@ dependencies = [
     { name = "langchain-openai" },
     { name = "langchain-text-splitters" },
     { name = "langgraph" },
+    { name = "lark" },
     { name = "pypdf" },
     { name = "python-dotenv" },
     { name = "rapidocr-onnxruntime" },
@@ -401,6 +402,7 @@ requires-dist = [
     { name = "langchain-openai", specifier = ">=0.2.14" },
     { name = "langchain-text-splitters", specifier = ">=0.3.4" },
     { name = "langgraph", specifier = ">=0.2.60" },
+    { name = "lark", specifier = ">=1.2.2" },
     { name = "pypdf", specifier = ">=5.1.0" },
     { name = "python-dotenv", specifier = ">=1.0.1" },
     { name = "rapidocr-onnxruntime", specifier = ">=1.4.3" },
@@ -1093,6 +1095,15 @@ dependencies = [
 sdist = { url = "https://files.pythonhosted.org/packages/10/20/f360e80f3ada8c2af59ab06a7815672114f1ac69359e6b6d762827cbd682/langsmith-0.2.6.tar.gz", hash = "sha256:ceb4ae2330bf87e40dccb0750c570d7b3bd6cd1f890db6b744bf62badca3077b", size = 313272 }
 wheels = [
     { url = "https://files.pythonhosted.org/packages/0d/01/3e011edd616c34b0cece379be5909fbb2c02d4dbb8c451031ca13c967e47/langsmith-0.2.6-py3-none-any.whl", hash = "sha256:3c18fc6106b9e4b81ba1e4f57c03c5fe1451f348f1360637602a3a7cbe003350", size = 325656 },
+]
+
+[[package]]
+name = "lark"
+version = "1.2.2"
+source = { registry = "https://pypi.org/simple" }
+sdist = { url = "https://files.pythonhosted.org/packages/af/60/bc7622aefb2aee1c0b4ba23c1446d3e30225c8770b38d7aedbfb65ca9d5a/lark-1.2.2.tar.gz", hash = "sha256:ca807d0162cd16cef15a8feecb862d7319e7a09bdb13aef927968e45040fed80", size = 252132 }
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/2d/00/d90b10b962b4277f5e64a78b6609968859ff86889f5b898c1a778c06ec00/lark-1.2.2-py3-none-any.whl", hash = "sha256:c2276486b02f0f1b90be155f2c8ba4a8e194d42775786db622faccd652d8e80c", size = 111036 },
 ]
 
 [[package]]

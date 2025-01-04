@@ -16,11 +16,11 @@ from httpx import ConnectError
 # from joblib import Memory
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import DirectoryLoader, JSONLoader
+from langchain_core.documents import Document
 from omegaconf.dictconfig import DictConfig
 from omegaconf.errors import ConfigAttributeError
 
 from composer.ai.tools import get_tool_agent
-from composer.global_state import get_memory_dir
 from composer.utils import Timer, get_file_hash
 
 logger = logging.getLogger(__name__)
@@ -205,6 +205,28 @@ class GrantGistSync(GrantsGist):
         logger.info("GrantGistSync run workflow complete.")
 
 
+def _to_str(value):
+    if isinstance(value, (int, float, str, bool)):
+        return value
+    if isinstance(value, list):
+        return ",".join(value)
+    raise ValueError
+
+
+def _load_single_json(file_path):
+    with open(file_path, "r") as f:
+        d = json.load(f)
+    title = d.pop("OpportunityTitle")
+    description = d.pop("Description")
+    d["source"] = str(file_path)
+    d["hash"] = get_file_hash(file_path)
+    d = {key: _to_str(value) for key, value in d.items()}
+    return Document(
+        page_content=f"{title}: {description}",
+        metadata=d,
+    )
+
+
 def load_all_json(target_dir):
     """Loads all json files in the `target_directory` into a docs format.
     Note that the function is cached by date, so loading is quite fast
@@ -213,17 +235,11 @@ def load_all_json(target_dir):
 
     logger.debug(f"Starting load_all_json for target_dir={target_dir}")
     if not Path(target_dir).exists():
-        logger.warning(f"Target directory does not exist: {target_dir}")
-        return []
+        logger.error(f"Target directory does not exist: {target_dir}")
+        exit(1)
 
     with Timer() as timer:
-        loader = DirectoryLoader(
-            path=target_dir,
-            glob="*.json",
-            loader_cls=JSONLoader,
-            loader_kwargs={"jq_schema": ".", "text_content": False},
-        )
-        files = loader.load()
+        files = [_load_single_json(f) for f in Path(target_dir).glob("*.json")]
 
     dt = f"{timer.dt:.02f}"
     logger.info(
@@ -388,7 +404,10 @@ class GrantGistIndex(GrantsGist):
 class GrantGistSummarize(GrantsGist):
     def run(self):
         vector_store = load_vector_store(self.hydra_conf)
-        prompt = self.hydra_conf.ai.prompt
+        prompt = self.hydra_conf.prompt
+        if prompt is None:
+            logger.error("prompt must be set when using Summarize")
+            exit(1)
         llm = self.hydra_conf.ai.llm
         app = get_tool_agent(llm, vector_store)
 

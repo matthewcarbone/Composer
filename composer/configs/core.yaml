@@ -9,3 +9,6 @@ dryrun: false
 # Used to pull the latest information at all times
 today: ${now:%Y%m%d}
 
+# Prompting for the llms
+# Set to None by default
+prompt: null

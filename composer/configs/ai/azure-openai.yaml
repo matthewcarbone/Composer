@@ -1,0 +1,10 @@
+# requires AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT to be set as environment variables
+llm:
+  _target_: langchain_openai.AzureChatOpenAI
+  deployment_name: use4o
+  openai_api_version: 2023-12-01-preview 
+embeddings:
+  _target_: langchain_openai.AzureOpenAIEmbeddings
+  deployment_name: text-embedding-ada-002
+  openai_api_version: 2023-12-01-preview 
+

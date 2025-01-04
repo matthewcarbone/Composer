@@ -17,6 +17,7 @@ dependencies = [
     "langchain-openai>=0.2.14",
     "langchain-text-splitters>=0.3.4",
     "langgraph>=0.2.60",
+    "lark>=1.2.2",
     "pypdf>=5.1.0",
     "python-dotenv>=1.0.1",
     "rapidocr-onnxruntime>=1.4.3",
