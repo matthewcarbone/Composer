@@ -4,7 +4,8 @@ llm:
   deployment_name: use4o
   openai_api_version: 2023-12-01-preview 
 embeddings:
-  _target_: langchain_openai.AzureOpenAIEmbeddings
-  deployment_name: text-embedding-ada-002
+  _target_: langchain_community.embeddings.openai.OpenAIEmbeddings
+  deployment: text-embedding-ada-002
   openai_api_version: 2023-12-01-preview 
+  openai_api_type: azure
 
