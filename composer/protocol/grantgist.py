@@ -34,12 +34,16 @@ class GrantsGist:
 
     @cached_property
     def today(self) -> str:
+        """Returns the current date in YYYYMMDD format."""
+
         today_str = str(self.hydra_conf.today)
         logger.debug(f"today property accessed; returning {today_str}")
         return today_str
 
     @cached_property
     def max_date_dt(self) -> datetime:
+        """Returns the max date to consider grants."""
+
         date = self.hydra_conf.protocol.config.max_date
         max_dt = datetime.strptime(date, "%Y%m%d")
         logger.debug(
@@ -49,6 +53,10 @@ class GrantsGist:
 
     @cached_property
     def min_date_dt(self) -> datetime:
+        """Returns the min date to consider grants. If a min_date is not
+        provided, this defaults to 3 months prior to the max date (which is
+        usually given by today)."""
+
         date = str(self.hydra_conf.protocol.config.min_date)
         if date is None:
             logger.info(
@@ -65,6 +73,8 @@ class GrantsGist:
 
     @cached_property
     def data_dir(self) -> str:
+        """Provides the path to the data directory."""
+
         g = self.hydra_conf.protocol.config.data_dir
         Path(g).mkdir(exist_ok=True, parents=True)
         logger.debug(f"Ensured data dir exists at {g}")
@@ -72,6 +82,8 @@ class GrantsGist:
 
     @cached_property
     def chroma_dir(self) -> str:
+        """Provides the path to the Chroma datastore directory."""
+
         g = self.hydra_conf.protocol.config.chroma_dir
         Path(g).mkdir(exist_ok=True, parents=True)
         logger.debug(f"Ensured chroma dir exists at {g}")
@@ -160,6 +172,7 @@ class GrantGistSync(GrantsGist):
         logger.debug(f"Found {len(items)} items in the XML structure")
 
         for item in items:
+            # Note that the dates in the extract are in the format MMDDYYYY
             dt = datetime.strptime(item["PostDate"], "%m%d%Y")
             # Filter out-of-range items
             if dt < self.min_date_dt or dt > self.max_date_dt:
@@ -172,7 +185,7 @@ class GrantGistSync(GrantsGist):
 
         # Write all JSON files
         counter = 0
-        logger.debug("Writing JSON files to root...")
+        logger.debug("Writing JSON files to data_dir...")
         for key, list_of_opportunities in d_by_post_date.items():
             for opportunity in list_of_opportunities:
                 opportunity_id = opportunity["OpportunityID"]
@@ -192,6 +205,8 @@ class GrantGistSync(GrantsGist):
 
         # Remove any .xml files
         for path in Path(self.data_dir).glob("*.xml"):
+            if str(path) == self.filename_full_path_as_xml:
+                continue
             logger.info(f"Cleaning up: unlinking {path}")
             path.unlink()
 
