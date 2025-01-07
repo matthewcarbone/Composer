@@ -233,11 +233,12 @@ def _load_single_json(file_path):
         d = json.load(f)
     title = d.pop("OpportunityTitle")
     description = d.pop("Description")
+    additional_info = d.pop("AdditionalInformationOnEligibility")
     d["source"] = str(file_path)
     d["hash"] = get_file_hash(file_path)
     d = {key: _to_str(value) for key, value in d.items()}
     return Document(
-        page_content=f"{title}: {description}",
+        page_content=f"{title}\n{description}\n{additional_info}",
         metadata=d,
     )
 
@@ -264,14 +265,7 @@ def load_all_json(target_dir):
     return files
 
 
-def _instantiate_vector_store(
-    embeddings, embeddings_name, persist_directory, docs=None
-):
-    """Loads or updates a Chroma vector store for given embedding type
-    - Checks which docs are already present in the store
-    - Adds new docs as needed
-    """
-
+def _get_vector_store(embeddings, embeddings_name, persist_directory):
     collection_name = f"grantgist_vector_store_{embeddings_name}"
     logger.info(
         f"Vector store collection {collection_name} in {persist_directory}"
@@ -283,10 +277,27 @@ def _instantiate_vector_store(
         anonymized_telemetry=False,
     )
 
-    vector_store = Chroma(
+    return Chroma(
         collection_name=collection_name,
         embedding_function=embeddings,
         client_settings=client_settings,
+    )
+
+
+def _instantiate_vector_store(
+    embeddings,
+    embeddings_name,
+    persist_directory,
+    docs=None,
+    max_docs_per_embedding_call=None,
+):
+    """Loads or updates a Chroma vector store for given embedding type
+    - Checks which docs are already present in the store
+    - Adds new docs as needed
+    """
+
+    vector_store = _get_vector_store(
+        embeddings, embeddings_name, persist_directory
     )
 
     all_data = vector_store.get()
@@ -348,7 +359,15 @@ def _instantiate_vector_store(
             vector_store.delete(ids=docs_to_remove)
 
         if len(new_docs_to_add) > 0:
-            vector_store.add_documents(documents=new_docs_to_add)
+            if (
+                max_docs_per_embedding_call is None
+                or max_docs_per_embedding_call == -1
+            ):
+                vector_store.add_documents(documents=new_docs_to_add)
+            else:
+                for ii in range(0, len(docs), max_docs_per_embedding_call):
+                    chunk = docs[ii : ii + max_docs_per_embedding_call]
+                    vector_store.add_documents(documents=chunk)
             logger.info("Added new docs to vector store.")
         else:
             logger.info("No new docs to add.")
@@ -379,6 +398,7 @@ def update_vector_store(docs, hydra_conf):
             embeddings_name,
             hydra_conf.protocol.config.chroma_dir,
             docs=docs,
+            max_docs_per_embedding_call=hydra_conf.ai.config.max_docs_per_embedding_call,
         )
     except ConnectError as error:
         logger.error(
