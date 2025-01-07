@@ -32,5 +32,9 @@ apply-version *VERSION: print-version
 serve-jupyter:
     uv run --with=ipython,jupyterlab,matplotlib,seaborn,h5netcdf,netcdf4,scikit-learn,scipy,xarray,"nbconvert==5.6.1" jupyter lab --notebook-dir="~"
 
+serve-jupyter-no-browser:
+    uv run --with=ipython,jupyterlab,matplotlib,seaborn,h5netcdf,netcdf4,scikit-learn,scipy,xarray,"nbconvert==5.6.1" jupyter lab --notebook-dir="~" --no-browser --port=8899
+
+
 run-ipython:
     uv run --with=ipython ipython
