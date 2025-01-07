@@ -8,3 +8,7 @@ embeddings:
   retry_max_seconds: 120
   show_progress_bar: true
   chunk_size: 1000
+
+defaults:
+  - _self_
+  - /_internal/ai@config: common.yaml
