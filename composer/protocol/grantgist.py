@@ -233,12 +233,18 @@ def _load_single_json(file_path):
         d = json.load(f)
     title = d.pop("OpportunityTitle")
     description = d.pop("Description")
-    additional_info = d.pop("AdditionalInformationOnEligibility")
+    try:
+        additional_info = d.pop("AdditionalInformationOnEligibility")
+    except KeyError:
+        additional_info = None
     d["source"] = str(file_path)
     d["hash"] = get_file_hash(file_path)
     d = {key: _to_str(value) for key, value in d.items()}
+    page_content = f"{title}\n{description}"
+    if additional_info is not None:
+        page_content += f"\n{additional_info}"
     return Document(
-        page_content=f"{title}\n{description}\n{additional_info}",
+        page_content=page_content,
         metadata=d,
     )
 
