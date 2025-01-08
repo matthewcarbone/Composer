@@ -371,8 +371,12 @@ def _instantiate_vector_store(
             ):
                 vector_store.add_documents(documents=new_docs_to_add)
             else:
-                for ii in range(0, len(docs), max_docs_per_embedding_call):
-                    chunk = docs[ii : ii + max_docs_per_embedding_call]
+                for ii in range(
+                    0, len(new_docs_to_add), max_docs_per_embedding_call
+                ):
+                    chunk = new_docs_to_add[
+                        ii : ii + max_docs_per_embedding_call
+                    ]
                     vector_store.add_documents(documents=chunk)
             logger.info("Added new docs to vector store.")
         else:
