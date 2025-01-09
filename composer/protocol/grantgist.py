@@ -240,9 +240,9 @@ def _load_single_json(file_path):
                 pass
     d = {key: _to_str(value) for key, value in d.items()}
     d = {**d, **new_metadata}
-    page_content = f"{title}\n{description}"
+    page_content = f"Title: {title}\nDescription: {description}"
     if additional_info is not None:
-        page_content += f"\n{additional_info}"
+        page_content += f"\nAdditional eligibility information: {additional_info}"
     return Document(page_content=page_content, metadata=d)
 
 
