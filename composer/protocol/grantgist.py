@@ -231,10 +231,13 @@ def _load_single_json(file_path):
     new_metadata = {}
     for key, value in d.items():
         if "Date" in key:
-            datetime_obj = datetime.strptime(value, "%m%d%Y")
-            timestamp = int(datetime_obj.timestamp())
-            new_key = f"{key}TimeStamp"
-            new_metadata[new_key] = timestamp
+            try:
+                datetime_obj = datetime.strptime(value, "%m%d%Y")
+                timestamp = int(datetime_obj.timestamp())
+                new_key = f"{key}TimeStamp"
+                new_metadata[new_key] = timestamp
+            except ValueError:
+                pass
     d = {key: _to_str(value) for key, value in d.items()}
     d = {**d, **new_metadata}
     page_content = f"{title}\n{description}"
