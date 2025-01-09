@@ -46,9 +46,7 @@ class GrantsGist:
 
         date = self.hydra_conf.protocol.config.max_date
         max_dt = datetime.strptime(date, "%Y%m%d")
-        logger.debug(
-            f"max_date_dt property accessed; raw config={date}, parsed={max_dt}"
-        )
+        logger.debug(f"max_date_dt property accessed; raw config={date}, parsed={max_dt}")
         return max_dt
 
     @cached_property
@@ -59,16 +57,12 @@ class GrantsGist:
 
         date = str(self.hydra_conf.protocol.config.min_date)
         if date is None:
-            logger.info(
-                "min_date not provided; defaulting to 3 months prior to max date"
-            )
+            logger.info("min_date not provided; defaulting to 3 months prior to max date")
             default_min_dt = self.max_date_dt - relativedelta(months=3)
             logger.debug(f"Computed default min_date_dt={default_min_dt}")
             return default_min_dt
         parsed_dt = datetime.strptime(date, "%Y%m%d")
-        logger.debug(
-            f"min_date_dt property accessed; parsed min_date_dt={parsed_dt}"
-        )
+        logger.debug(f"min_date_dt property accessed; parsed min_date_dt={parsed_dt}")
         return parsed_dt
 
     @cached_property
@@ -108,17 +102,13 @@ class GrantGistSync(GrantsGist):
     @cached_property
     def filename_full_path_as_xml(self) -> str:
         path_as_xml = str(Path(self.data_dir) / self.filename) + ".xml"
-        logger.debug(
-            f"filename_full_path_as_xml property accessed; returning {path_as_xml}"
-        )
+        logger.debug(f"filename_full_path_as_xml property accessed; returning {path_as_xml}")
         return path_as_xml
 
     @cached_property
     def filename_full_path_as_zip(self) -> str:
         path_as_zip = str(Path(self.data_dir) / self.filename) + ".zip"
-        logger.debug(
-            f"filename_full_path_as_zip property accessed; returning {path_as_zip}"
-        )
+        logger.debug(f"filename_full_path_as_zip property accessed; returning {path_as_zip}")
         return path_as_zip
 
     @cached_property
@@ -130,9 +120,7 @@ class GrantGistSync(GrantsGist):
     def pull_and_unzip(self) -> None:
         # If XML file already exists, skip the download step
         if Path(self.filename_full_path_as_xml).exists():
-            logger.info(
-                f"Done: pull_and_unzip: XML file ({self.filename_full_path_as_xml}) already exists"
-            )
+            logger.info(f"Done: pull_and_unzip: XML file ({self.filename_full_path_as_xml}) already exists")
             return
         else:
             logger.info(f"Pulling data from {self.url_target}")
@@ -145,9 +133,7 @@ class GrantGistSync(GrantsGist):
             logger.info(f"Zip file saved to {self.filename_full_path_as_zip}")
 
             # Extract the zip file
-            logger.debug(
-                f"Extracting zip file from {self.filename_full_path_as_zip}..."
-            )
+            logger.debug(f"Extracting zip file from {self.filename_full_path_as_zip}...")
             with zipfile.ZipFile(self.filename_full_path_as_zip, "r") as zf:
                 zf.extractall(self.data_dir)
             logger.info(f"Zip file extracted into {self.data_dir}")
@@ -239,14 +225,20 @@ def _load_single_json(file_path):
         additional_info = None
     d["source"] = str(file_path)
     d["hash"] = get_file_hash(file_path)
+
+    # Assign each metadata item a timestamp which can be much
+    # more easily queried.
+    for key, value in d.items():
+        if "Date" in key:
+            datetime_obj = datetime.strptime(value, "%m%d%Y")
+            timestamp = int(datetime_obj.timestamp())
+            new_key = f"{key}TimeStamp"
+            d[new_key] = timestamp
     d = {key: _to_str(value) for key, value in d.items()}
     page_content = f"{title}\n{description}"
     if additional_info is not None:
         page_content += f"\n{additional_info}"
-    return Document(
-        page_content=page_content,
-        metadata=d,
-    )
+    return Document(page_content=page_content, metadata=d)
 
 
 def load_all_json(target_dir):
@@ -264,18 +256,14 @@ def load_all_json(target_dir):
         files = [_load_single_json(f) for f in Path(target_dir).glob("*.json")]
 
     dt = f"{timer.dt:.02f}"
-    logger.info(
-        f"Total {len(files)} JSON files loaded from '{target_dir}' in {dt} s"
-    )
+    logger.info(f"Total {len(files)} JSON files loaded from '{target_dir}' in {dt} s")
     logger.debug("Finished load_all_json")
     return files
 
 
 def _get_vector_store(embeddings, embeddings_name, persist_directory):
     collection_name = f"grantgist_vector_store_{embeddings_name}"
-    logger.info(
-        f"Vector store collection {collection_name} in {persist_directory}"
-    )
+    logger.info(f"Vector store collection {collection_name} in {persist_directory}")
 
     client_settings = chromadb.Settings(
         is_persistent=True,
@@ -302,9 +290,7 @@ def _instantiate_vector_store(
     - Adds new docs as needed
     """
 
-    vector_store = _get_vector_store(
-        embeddings, embeddings_name, persist_directory
-    )
+    vector_store = _get_vector_store(embeddings, embeddings_name, persist_directory)
 
     all_data = vector_store.get()
     L = len(all_data["ids"])
@@ -316,10 +302,7 @@ def _instantiate_vector_store(
             doc_metadata_source = doc.metadata["source"]
             json_hash = get_file_hash(doc_metadata_source)
             doc.metadata["hash"] = json_hash
-            logger.debug(
-                f"Processing doc with source: {doc_metadata_source} "
-                f"file hash {json_hash}"
-            )
+            logger.debug(f"Processing doc with source: {doc_metadata_source} " f"file hash {json_hash}")
 
         # Determine which doc sources are already in the store
         vs_sources = {}
@@ -328,13 +311,8 @@ def _instantiate_vector_store(
             file_hash = _metadata["hash"]
             source_stem = str(Path(source).stem)
             vs_sources[source_stem] = (file_hash, _id)
-            logger.debug(
-                f"Data with source {source_stem} and hash (id) {file_hash} "
-                f"({_id}) in db"
-            )
-        logger.debug(
-            f"Found {len(vs_sources)} sources in existing vector store."
-        )
+            logger.debug(f"Data with source {source_stem} and hash (id) {file_hash} " f"({_id}) in db")
+        logger.debug(f"Found {len(vs_sources)} sources in existing vector store.")
 
         # Filter out docs that already exist
         new_docs_to_add = []
@@ -353,30 +331,20 @@ def _instantiate_vector_store(
                 logger.warning(f"Doc {source} has changed and will be replaced")
 
         logger.info(
-            f"Parsing {len(docs)} docs to load_vector_store; "
-            f"{len(new_docs_to_add)} are new and will be added."
+            f"Parsing {len(docs)} docs to load_vector_store; " f"{len(new_docs_to_add)} are new and will be added."
         )
 
         if len(docs_to_remove) > 0:
-            logger.info(
-                f"Deleting {len(docs_to_remove)} documents from vector store"
-            )
+            logger.info(f"Deleting {len(docs_to_remove)} documents from vector store")
             logger.debug(f"Deleting {docs_to_remove}")
             vector_store.delete(ids=docs_to_remove)
 
         if len(new_docs_to_add) > 0:
-            if (
-                max_docs_per_embedding_call is None
-                or max_docs_per_embedding_call == -1
-            ):
+            if max_docs_per_embedding_call is None or max_docs_per_embedding_call == -1:
                 vector_store.add_documents(documents=new_docs_to_add)
             else:
-                for ii in range(
-                    0, len(new_docs_to_add), max_docs_per_embedding_call
-                ):
-                    chunk = new_docs_to_add[
-                        ii : ii + max_docs_per_embedding_call
-                    ]
+                for ii in range(0, len(new_docs_to_add), max_docs_per_embedding_call):
+                    chunk = new_docs_to_add[ii : ii + max_docs_per_embedding_call]
                     vector_store.add_documents(documents=chunk)
             logger.info("Added new docs to vector store.")
         else:

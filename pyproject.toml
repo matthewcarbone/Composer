@@ -37,7 +37,7 @@ path = "composer/_version.py"
 composer = "composer.entrypoint:entrypoint"
 
 [tool.ruff]
-line-length = 80
+line-length = 120
 exclude = ["composer/_version.py"]
 
 [tool.ruff.format]
