@@ -228,13 +228,15 @@ def _load_single_json(file_path):
 
     # Assign each metadata item a timestamp which can be much
     # more easily queried.
+    new_metadata = {}
     for key, value in d.items():
         if "Date" in key:
             datetime_obj = datetime.strptime(value, "%m%d%Y")
             timestamp = int(datetime_obj.timestamp())
             new_key = f"{key}TimeStamp"
-            d[new_key] = timestamp
+            new_metadata[new_key] = timestamp
     d = {key: _to_str(value) for key, value in d.items()}
+    d = {**d, **new_metadata}
     page_content = f"{title}\n{description}"
     if additional_info is not None:
         page_content += f"\n{additional_info}"
