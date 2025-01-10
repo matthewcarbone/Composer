@@ -6,21 +6,25 @@ from dataclasses import dataclass
 from datetime import datetime
 from functools import cached_property
 from pathlib import Path
+from typing import List, Literal, Optional, Tuple
 
 import chromadb
 import requests
 import xmltodict
 from dateutil.relativedelta import relativedelta
 from httpx import ConnectError
-
-# from joblib import Memory
 from langchain_chroma import Chroma
 from langchain_community.document_loaders import DirectoryLoader, JSONLoader
 from langchain_core.documents import Document
+
+# from joblib import Memory
+from langchain_core.tools import tool
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode
 from omegaconf.dictconfig import DictConfig
 from omegaconf.errors import ConfigAttributeError
+from typing_extensions import Annotated, TypedDict
 
-from composer.ai.tools import get_tool_agent
 from composer.utils import Timer, get_file_hash
 
 logger = logging.getLogger(__name__)
@@ -419,6 +423,77 @@ class GrantGistIndex(GrantsGist):
         logger.info("GrantGistIndex.run() complete.")
 
 
+def get_tool_agent(llm, vectorstore):
+    @tool(response_format="content_and_artifact")
+    def get_grant_information(
+        query: Annotated[str, ..., "Search query to run."],
+        k: Annotated[
+            int,
+            ...,
+            "The number of queries to make to the database. Make sure this value makes sense. I.e., it should probably be at least the number of dates queried.",
+        ],
+        min_date: Annotated[
+            Optional[str],
+            ...,
+            "The minimum date relevant to the query (should be a string in format YYYYMMDD with no dashes). If no minimum date is relevant to the query, leave this as it's default.",
+        ] = None,
+        max_date: Annotated[
+            Optional[str],
+            ...,
+            "The maximum date relevant to the query (should be a string in format YYYYMMDD with no dashes). If no maximum date is relevant to the query, leave this as it's default.",
+        ] = None,
+    ) -> Tuple[str, List[Document]]:
+        """Tool for retrieving grant information from a database of grants."""
+
+        # Deal with dates
+        dates_conditions = []
+        if min_date is not None:
+            tmp = {"PostDateTimeStamp": {"$gte": int(datetime.strptime(min_date, "%Y%m%d").timestamp())}}
+            dates_conditions.append(tmp)
+        if max_date is not None:
+            tmp = {"PostDateTimeStamp": {"$lte": int(datetime.strptime(max_date, "%Y%m%d").timestamp())}}
+            dates_conditions.append(tmp)
+
+        where = {"$and": dates_conditions}
+
+        search_kwargs = {"k": k, "filter": where}
+
+        retriever = vectorstore.as_retriever(search_kwargs=search_kwargs)
+
+        docs = retriever.invoke(query)
+        serialized = "\n\n".join((f"Source: {doc.metadata}\n" f"Content: {doc.page_content}") for doc in docs)
+        return serialized, docs
+
+    tools = [get_grant_information]
+    tool_node = ToolNode(tools)
+
+    model_with_tools = llm.bind_tools(tools)
+
+    def should_continue(state: MessagesState):
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:
+            return "tools"
+        return END
+
+    def agent(state: MessagesState):
+        messages = state["messages"]
+        response = model_with_tools.invoke(messages)
+        return {"messages": [response]}
+
+    workflow = StateGraph(MessagesState)
+
+    workflow.add_node("agent", agent)
+    workflow.add_node("tools", tool_node)
+
+    workflow.add_edge(START, "agent")
+    workflow.add_conditional_edges("agent", should_continue, ["tools", END])
+    workflow.add_edge("tools", "agent")
+
+    app = workflow.compile()
+    return app
+
+
 class GrantGistSummarize(GrantsGist):
     def run(self):
         vector_store = load_vector_store(self.hydra_conf)
@@ -434,7 +509,7 @@ class GrantGistSummarize(GrantsGist):
                 "messages": [
                     (
                         "system",
-                        "You are an expert grant-writer. If you don't feel that there are any relevant grants related to the question, please say so. When possible, provide the specific FOA/NOFO # of the grant you refer to in your response.",
+                        "You are an expert grant-writer. If you don't feel that there are any relevant grants related to the question, please say so. When possible, provide the specific grant # of the grant you refer to in your response.",
                     ),
                     (
                         "human",
