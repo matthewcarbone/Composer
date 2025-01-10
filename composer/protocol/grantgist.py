@@ -48,7 +48,7 @@ class GrantsGist:
     def max_date_dt(self) -> datetime:
         """Returns the max date to consider grants."""
 
-        date = self.hydra_conf.protocol.config.max_date
+        date = str(self.hydra_conf.protocol.config.max_date)
         max_dt = datetime.strptime(date, "%Y%m%d")
         logger.debug(f"max_date_dt property accessed; raw config={date}, parsed={max_dt}")
         return max_dt
