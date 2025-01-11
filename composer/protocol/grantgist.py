@@ -454,7 +454,12 @@ def get_tool_agent(llm, vectorstore):
             tmp = {"PostDateTimeStamp": {"$lte": int(datetime.strptime(max_date, "%Y%m%d").timestamp())}}
             dates_conditions.append(tmp)
 
-        where = {"$and": dates_conditions}
+        if len(dates_conditions) == 2:
+            where = {"$and": dates_conditions}
+        elif len(dates_conditions) == 1:
+            where = dates_conditions
+        else:
+            where = None
 
         search_kwargs = {"k": k, "filter": where}
 
