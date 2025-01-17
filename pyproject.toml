@@ -24,7 +24,6 @@ dependencies = [
     "pypdf>=5.1.0",
     "python-dotenv>=1.0.1",
     "rapidocr-onnxruntime>=1.4.3",
-    "requests-cache>=1.2.1",
     "xmltodict>=0.14.2",
 ]
 dynamic = ["version"]

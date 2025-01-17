@@ -26,12 +26,6 @@ config:
   # LLM instance
   llm: null
 
-  # Requests cache for caching 
-  requests_cache:
-    _target_: requests_cache.CachedSession
-    cache_name: "${protocol.config.root}/requests_cache"
-    allowable_methods: ["GET", "POST"]
-
   min_date: ${today}
   max_date: ${today}
 

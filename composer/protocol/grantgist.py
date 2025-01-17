@@ -11,10 +11,11 @@ from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
-import requests_cache
+import requests
 import rich
 import xmltodict
 from dateutil.relativedelta import relativedelta
+from hydra.conf import HydraConf
 from joblib import Memory
 from monty.json import MSONable, load
 from omegaconf.dictconfig import DictConfig
@@ -32,13 +33,12 @@ logger = logging.getLogger(__name__)
 memory = Memory(location=get_memory_dir(), verbose=int(get_verbosity()))
 
 
-@memory.cache(ignore=["session", "stream"])
-def cached_get_request(session, url: str, stream: bool = True):
+@memory.cache(ignore=["stream"])
+def cached_get_request(url: str, stream: bool = True):
     """
     A GET request using a cached session.
 
     Args:
-        session: A requests-like session object.
         url (str): The URL endpoint to send the GET request to.
         stream (bool, optional): Whether to stream the response. Defaults to True.
 
@@ -51,7 +51,7 @@ def cached_get_request(session, url: str, stream: bool = True):
     logger.debug(f"Calling cached_get_request with url {url}")
 
     # Since requests is synchronous, run in a thread to avoid blocking event loop.
-    response = session.get(url, stream=stream)
+    response = requests.get(url, stream=stream)
     if response.status_code != 200:
         logger.warning(f"GET request returned status code {response.status_code} for {url}")
     response.raise_for_status()
@@ -59,13 +59,12 @@ def cached_get_request(session, url: str, stream: bool = True):
     return response
 
 
-@memory.cache(ignore=["session"])
-def cached_post_request(session, url: str, **params):
+@memory.cache
+def cached_post_request(url: str, **params):
     """
     A POST request using a cached session.
 
     Args:
-        session: A requests-like session object.
         url (str): The URL endpoint to send the POST request to.
         **params: Arbitrary keyword arguments for the POST request body or settings.
 
@@ -78,7 +77,7 @@ def cached_post_request(session, url: str, **params):
     logger.debug(f"Calling cached_post_request with url {url} and params {params}")
 
     # Since requests is synchronous, run in a thread to avoid blocking event loop.
-    response = session.post(url, **params)
+    response = requests.post(url, **params)
     if response.status_code != 200:
         logger.warning(f"POST request returned status code {response.status_code} for {url}")
     response.raise_for_status()
@@ -116,7 +115,6 @@ def pull_grants_gov_extract(hydra_conf: DictConfig):
     max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
 
     extracts_filename = conf.extracts_filename
-    session = conf.requests_cache
 
     with TemporaryDirectory() as tempdir:
         tempdir = Path(tempdir)
@@ -127,7 +125,7 @@ def pull_grants_gov_extract(hydra_conf: DictConfig):
         url = f"{conf.urls.extracts}/{extracts_filename}.zip"
         with Timer() as timer:
             logger.info(f"Fetching ZIP file from {url} or cache...")
-            response = cached_get_request(session, url, stream=True)
+            response = cached_get_request(url, stream=True)
 
             # Write ZIP to disk in chunks
             with open(file_zip, "wb") as f:
@@ -196,7 +194,6 @@ def pull_details(hydra_conf: DictConfig):
     root = Path(conf.root)
     metadata_path = root / "metadata"
     metadata_path.mkdir(exist_ok=True, parents=True)
-    session = conf.requests_cache
     min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
     max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
     url = conf.urls.details
@@ -216,7 +213,7 @@ def pull_details(hydra_conf: DictConfig):
         if min_date <= post_date <= max_date:
             logger.debug(f"Pulling information for {path.name}")
             params = {"data": {"oppId": opportunity["OpportunityID"]}}
-            response = cached_post_request(session, url, **params)
+            response = cached_post_request(url, **params)
             if response is None:
                 logger.warning(f"Received None response for {path.name}, skipping update.")
                 continue
@@ -228,3 +225,13 @@ def pull_details(hydra_conf: DictConfig):
             count_updated += 1
 
     logger.info(f"Number of opportunities updated with details: {count_updated}")
+
+
+def pull_pdfs(hydra_conf: DictConfig):
+    conf = hydra_conf.protocol.config
+    root = Path(conf.root)
+    documents_path = root / "documents"
+    documents_path.mkdir(exist_ok=True, parents=True)
+    min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
+    max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
+    url = conf.urls.download
