@@ -1,17 +1,32 @@
 import logging
+from pathlib import Path
 
 import hydra
+from hydra.core.hydra_config import HydraConfig
+from rich import print as print
 
-# from composer import global_state
+from composer import global_state
 
 logger = logging.getLogger(__name__)
 
 
+def set_global_state_information(hydra_conf):
+    memory_dir = Path(hydra_conf.protocol.config.root) / "memory"
+    memory_dir.mkdir(exist_ok=True, parents=True)
+    global_state.set_memory_dir(str(memory_dir))
+    logger.info(f"Memory directory set to {global_state.get_memory_dir()}")
+    verbosity = HydraConfig.get().verbose
+    global_state.set_verbosity(verbosity)
+    logger.info(f"Verbose is {global_state.get_verbosity()}")
+
+
 def run(hydra_conf):
-    # global_state.set_memory_dir(hydra_conf.paths.memory)
+    set_global_state_information(hydra_conf)
     hydra_conf = hydra.utils.instantiate(hydra_conf)
     logger.debug(f"hydra_conf: \n{hydra_conf}")
-    hydra_conf.protocol.obj(hydra_conf).run()
+    for name, target in hydra_conf.protocol.targets.items():
+        logger.info(f"Executing: {name}")
+        target(hydra_conf)
 
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="core.yaml")

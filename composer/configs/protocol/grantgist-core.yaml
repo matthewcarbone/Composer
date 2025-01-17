@@ -1,0 +1,42 @@
+targets:
+  pull_grants_gov_extract:
+    _target_: composer.protocol.grantgist.pull_grants_gov_extract
+    _partial_: true
+  pull_details:
+    _target_: composer.protocol.grantgist.pull_details
+    _partial_: true
+
+config:
+
+  # The home directory for grantgist
+  root: ${paths.home}/grantgist
+
+  # Filename pattern
+  extracts_filename: GrantsDBExtract${today}v2
+
+  # Urls required by the various grantgist API requests
+  urls:
+    download: "https://apply07.grants.gov/grantsws/rest/opportunity/att/download"
+    details: "https://apply07.grants.gov/grantsws/rest/opportunity/details"
+    extracts: "https://prod-grants-gov-chatbot.s3.amazonaws.com/extracts"
+
+  # Vectorstore instance
+  vectorstore: ...
+
+  # LLM instance
+  llm: null
+
+  # Requests cache for caching 
+  requests_cache:
+    _target_: requests_cache.CachedSession
+    cache_name: "${protocol.config.root}/requests_cache"
+    allowable_methods: ["GET", "POST"]
+
+  min_date: ${today}
+  max_date: ${today}
+
+
+# keeping this here just in case 
+# defaults:
+#   - _self_
+#   - /_internal/grantgist@config: common-config.yaml

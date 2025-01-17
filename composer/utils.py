@@ -11,7 +11,7 @@ class Timer:
         self._time = perf_counter() - self._time
 
     @property
-    def dt(self):
+    def elapsed(self):
         return self._time
 
 
