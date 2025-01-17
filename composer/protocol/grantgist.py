@@ -16,7 +16,7 @@ import rich
 import xmltodict
 from dateutil.relativedelta import relativedelta
 from hydra.conf import HydraConf
-from joblib import Memory
+from joblib import Memory, Parallel, delayed
 from monty.json import MSONable, load
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
@@ -179,6 +179,44 @@ def pull_grants_gov_extract(hydra_conf: DictConfig):
     logger.info(f"JSON files written in {timer.elapsed:.02f} s")
 
 
+def update_opportunity_details(path: Path, min_date: datetime, max_date: datetime, details_url: str) -> int:
+    """
+    Read opportunity JSON from `path`, fetch additional details if in range,
+    write updated JSON, and return 1 if updated, else 0.
+    """
+    with open(path, "r", encoding="utf-8") as f:
+        opportunity = json.load(f)
+
+    post_date_str = opportunity.get("PostDate")
+    if not post_date_str:
+        logger.warning(f"Missing 'PostDate' in {path.name}, skipping.")
+        return 0
+
+    post_date = datetime.strptime(post_date_str, "%m%d%Y")
+
+    if not (min_date <= post_date <= max_date):
+        logger.debug(f"Not in date range {path.name}")
+        return 0
+
+    logger.debug(f"Pulling information for {path.name}")
+    params = {"data": {"oppId": opportunity["OpportunityID"]}}
+
+    # Make the HTTP POST call (cached)
+    response = cached_post_request(details_url, **params)
+    if response is None:
+        logger.warning(f"Received None response for {path.name}, skipping update.")
+        return 0
+
+    # Update the in-memory object
+    opportunity["@details"] = response.json()
+
+    # Write JSON back to disk
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(opportunity, f, indent=4)
+
+    return 1
+
+
 def pull_details(hydra_conf: DictConfig):
     """
     Pull additional details for each opportunity within the configured date range
@@ -196,42 +234,28 @@ def pull_details(hydra_conf: DictConfig):
     metadata_path.mkdir(exist_ok=True, parents=True)
     min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
     max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
-    url = conf.urls.details
+    details_url = conf.urls.details
 
-    count_updated = 0
-    for path in metadata_path.glob("*.json"):
-        with open(path, "r", encoding="utf-8") as f:
-            opportunity = json.load(f)
+    # Gather all *.json file paths
+    all_paths = list(metadata_path.glob("*.json"))
+    logger.debug(f"Found {len(all_paths)} JSON files to process.")
 
-        post_date_str = opportunity.get("PostDate")
-        if not post_date_str:
-            logger.debug(f"Missing 'PostDate' in {path.name}, skipping.")
-            continue
+    results = Parallel(n_jobs=8)(
+        delayed(update_opportunity_details)(path, min_date, max_date, details_url)
+        for path in tqdm(all_paths, disable=not get_verbosity())
+    )
 
-        post_date = datetime.strptime(post_date_str, "%m%d%Y")
-
-        if min_date <= post_date <= max_date:
-            logger.debug(f"Pulling information for {path.name}")
-            params = {"data": {"oppId": opportunity["OpportunityID"]}}
-            response = cached_post_request(url, **params)
-            if response is None:
-                logger.warning(f"Received None response for {path.name}, skipping update.")
-                continue
-
-            opportunity["@details"] = response.json()
-
-            with open(path, "w", encoding="utf-8") as f:
-                json.dump(opportunity, f, indent=4)
-            count_updated += 1
+    # Sum up how many were successfully updated
+    count_updated = sum(results)  # type: ignore
 
     logger.info(f"Number of opportunities updated with details: {count_updated}")
 
 
-def pull_pdfs(hydra_conf: DictConfig):
-    conf = hydra_conf.protocol.config
-    root = Path(conf.root)
-    documents_path = root / "documents"
-    documents_path.mkdir(exist_ok=True, parents=True)
-    min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
-    max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
-    url = conf.urls.download
+# def pull_pdfs(hydra_conf: DictConfig):
+#     conf = hydra_conf.protocol.config
+#     root = Path(conf.root)
+#     documents_path = root / "documents"
+#     documents_path.mkdir(exist_ok=True, parents=True)
+#     min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
+#     max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
+#     url = conf.urls.download
