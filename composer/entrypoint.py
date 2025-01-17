@@ -6,6 +6,7 @@ from hydra.core.hydra_config import HydraConfig
 from rich import print as print
 
 from composer import global_state
+from composer.utils import Timer
 
 logger = logging.getLogger(__name__)
 
@@ -21,12 +22,16 @@ def set_global_state_information(hydra_conf):
 
 
 def run(hydra_conf):
-    set_global_state_information(hydra_conf)
-    hydra_conf = hydra.utils.instantiate(hydra_conf)
-    logger.debug(f"hydra_conf: \n{hydra_conf}")
-    for name, target in hydra_conf.protocol.targets.items():
-        logger.info(f"Executing: {name}")
-        target(hydra_conf)
+    with Timer() as global_timer:
+        set_global_state_information(hydra_conf)
+        hydra_conf = hydra.utils.instantiate(hydra_conf)
+        logger.debug(f"hydra_conf: \n{hydra_conf}")
+        for name, target in hydra_conf.protocol.targets.items():
+            logger.info(f"Executing: {name}")
+            with Timer() as timer:
+                target(hydra_conf)
+            logger.info(f"Completed: {name} in {timer.elapsed:.02f} s")
+    logger.info(f"SUCCESS - {global_timer.elapsed:.02f} s")
 
 
 @hydra.main(version_base="1.3", config_path="configs", config_name="core.yaml")
