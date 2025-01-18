@@ -13,6 +13,8 @@ import requests
 import rich
 import xmltodict
 from joblib import Memory, Parallel, delayed
+from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.vectorstores import VectorStore
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
 from rich import print as print
@@ -184,6 +186,40 @@ class Params:
         value = self.hydra_conf.n_jobs
         logger.debug(f"Accessed 'n_jobs' property with value: {value}")
         return value
+
+    @cached_property
+    def embedding_model(self) -> Any:
+        return self.conf.embeddings
+
+    def initialize_vectorstore(self):
+        """
+        Initializes the vectorstore from the provided partial embedding_model.
+        """
+
+        name = f"grantgist-{self.embedding_model.model}"
+        return self.conf.vectorstore(collection_name=name, embedding_function=self.embedding_model)
+
+    def initialize_retriever(self, vectorstore):
+        """
+        Initializes the retriever object from the vectorstore.
+        """
+
+        kwargs = self.conf.retriever_kwargs
+        return vectorstore.as_retriever(**kwargs)
+
+    @cached_property
+    def max_docs_per_embedding_call(self) -> int:
+        value = self.conf.max_docs_per_embedding_call
+        logger.debug(f"Accessed 'max_docs_per_embedding_call' property with value {value}")
+        return value
+
+    @cached_property
+    def disqualifying_strings(self) -> List[str]:
+        return self.conf.disqualifying_strings
+
+    @cached_property
+    def textsplitter(self):
+        return self.conf.textsplitter
 
 
 @memory.cache(ignore=["stream"])
@@ -550,3 +586,73 @@ def pull_pdfs(hydra_conf: DictConfig):
     count_updated = sum(results)  # type: ignore
 
     logger.info(f"Number of attachments pulled: {count_updated}")
+
+
+def _get_unique_identifier(metadata: Dict[str, str]) -> str:
+    source_api = metadata["source_api"]
+    opportunity_id = metadata["OpportunityId"]
+    document_id = metadata["DocumentId"]
+    return f"{source_api}-{opportunity_id}-{document_id}"
+
+
+def write_vectorstore(vectorstore: VectorStore, p: Params):
+    docs = []
+    disqualifying_strings = p.disqualifying_strings
+    metadatas = vectorstore.get()["metadatas"]
+    L = len(metadatas)
+    logger.info(f"Processing data to vectorstore (found {L} in vectorstore already)")
+    existing_unique_ids = [_get_unique_identifier(xx) for xx in metadatas]
+    for d in p.documents_path.iterdir():
+        opportunity_id = d.stem
+        for document_path_directory in d.iterdir():
+            document_path = list(document_path_directory.iterdir())
+            if len(document_path) != 1:
+                logger.error(f"Document path {document_path} should have only a single file")
+            document_path = document_path[0]
+            document_id = document_path.stem
+            loader = PyPDFLoader(str(document_path))
+
+            # loaded_docs represents the pages of the pdf
+            loaded_docs = loader.load()
+
+            # For each page, we need to determine if the entire document
+            # is valid
+            tmp_docs = []
+            doc_valid = True
+            for ii, page in enumerate(loaded_docs):
+                if any([s in page.page_content for s in disqualifying_strings]):
+                    logger.warning(f"Document {document_path} skipped due to disqualifying string")
+                    doc_valid = False
+                    break
+                page.metadata["source_path"] = str(document_path)
+                page.metadata["source_api"] = "grants.gov"
+                page.metadata["OpportunityId"] = str(opportunity_id)
+                page.metadata["DocumentId"] = str(document_id)
+                page.metadata["page"] = page
+                current_id = _get_unique_identifier(page.metadata)
+                if current_id in existing_unique_ids:
+                    logger.debug(f"id {current_id} skipped, already exists in the database")
+                    doc_valid = False
+                    break
+                tmp_docs.append(page)
+
+            if doc_valid:
+                logger.debug(f"Document {document_path} added to docs list")
+                docs.extend(tmp_docs)
+
+    if p.textsplitter is not None:
+        docs = p.textsplitter.split_documents(docs)
+
+    for ii in range(0, len(docs), p.max_docs_per_embedding_call):
+        chunk = docs[ii : ii + p.max_docs_per_embedding_call]
+        _ = vectorstore.add_documents(documents=chunk)
+
+
+def construct_vectorstore(hydra_conf: DictConfig):
+    """
+    Creates the vectorstore.
+    """
+
+    p = Params(hydra_conf)
+    vectorstore = p.initialize_vectorstore()
+    write_vectorstore(vectorstore, p)

@@ -1,12 +1,15 @@
 targets:
-  pull_grants_gov_extract:
-    _target_: composer.protocol.grantgist.pull_grants_gov_extract
-    _partial_: true
-  pull_details:
-    _target_: composer.protocol.grantgist.pull_details
-    _partial_: true
-  pull_pdfs:
-    _target_: composer.protocol.grantgist.pull_pdfs
+  # pull_grants_gov_extract:
+  #   _target_: composer.protocol.grantgist.pull_grants_gov_extract
+  #   _partial_: true
+  # pull_details:
+  #   _target_: composer.protocol.grantgist.pull_details
+  #   _partial_: true
+  # pull_pdfs:
+  #   _target_: composer.protocol.grantgist.pull_pdfs
+  #   _partial_: true
+  construct_vectorstore:
+    _target_: composer.protocol.grantgist.construct_vectorstore
     _partial_: true
 
 config:
@@ -26,8 +29,28 @@ config:
   min_date: ${today}
   max_date: ${today}
 
+  retriever_kwargs: 
+    search_kwargs:
+
+      # The number of documents to retrieve for each question
+      k: 10
+
+      # Filters to apply to each search. For example, filtering by the
+      # office of science:
+      filter:
+        AgencyName: "Office of Science"
+
+  # Chunks the calls to the embedding model so as to not overwhelm it with
+  # too many requests at once
+  max_docs_per_embedding_call: 500
+
+  # Disqualifies documents that contain the following strings:
+  disqualifying_strings:
+    - "The document you are trying to load requires Adobe Reader 8 or higher"
+
 defaults:
   - _self_
   - /ai/llm@config.llm: ollama.yaml 
   - /ai/embeddings@config.embeddings: ollama.yaml
   - /ai/vectorstore@config.vectorstore: chroma.yaml
+  - /ai/textsplitter@config.textsplitter: standard.yaml
