@@ -204,7 +204,7 @@ def update_opportunity_details(path: Path, min_date: datetime, max_date: datetim
     # Make the HTTP POST call (cached)
     response = cached_post_request(details_url, **params)
     if response is None:
-        logger.warning(f"Received None response for {path.name}, skipping update.")
+        logger.warning(f"Received None response for {details_url}, skipping update.")
         return 0
 
     # Update the in-memory object
@@ -251,11 +251,74 @@ def pull_details(hydra_conf: DictConfig):
     logger.info(f"Number of opportunities updated with details: {count_updated}")
 
 
-# def pull_pdfs(hydra_conf: DictConfig):
-#     conf = hydra_conf.protocol.config
-#     root = Path(conf.root)
-#     documents_path = root / "documents"
-#     documents_path.mkdir(exist_ok=True, parents=True)
-#     min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
-#     max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
-#     url = conf.urls.download
+def _pull_all_attachments(
+    load_path: Path, target_directory: Path, min_date: datetime, max_date: datetime, download_url: str
+) -> int:
+    with open(load_path, "r", encoding="utf-8") as f:
+        opportunity = json.load(f)
+
+    post_date_str = opportunity.get("PostDate")
+    if not post_date_str:
+        logger.warning(f"Missing 'PostDate' in {load_path.name}, skipping.")
+        return 0
+
+    post_date = datetime.strptime(post_date_str, "%m%d%Y")
+
+    if not (min_date <= post_date <= max_date):
+        logger.debug(f"Not in date range {load_path.name}")
+        return 0
+
+    counter = 0
+    opportunity_id = str(opportunity["OpportunityID"])
+    folders = opportunity["@details"]["synopsisAttachmentFolders"]
+    target_directory = Path(target_directory)
+    for folder in folders:
+        for attachment in folder["synopsisAttachments"]:
+            attachment_id = str(attachment["id"])
+            attachment_type = attachment["mimeType"]
+            attachment_name = attachment["fileName"]
+            condition1 = "application/pdf" == attachment_type
+            condition2 = ".pdf" in attachment_name
+            if condition1 and condition2:
+                url = f"{download_url}/{attachment_id}"
+                response = cached_get_request(url, stream=True)
+                if response is None:
+                    logger.warning(f"Received None response for {download_url}, skipping update.")
+                    continue
+
+                filename = sanitize_filename(attachment_name).replace(" ", "_")
+                file_dir = target_directory / opportunity_id / attachment_id
+                file_dir.mkdir(exist_ok=True, parents=True)
+                file_target = file_dir / filename
+                with open(file_target, "wb") as f:
+                    f.write(response.content)
+
+                counter += 1
+
+    return counter
+
+
+def pull_pdfs(hydra_conf: DictConfig):
+    conf = hydra_conf.protocol.config
+    root = Path(conf.root)
+    metadata_path = root / "metadata"
+    metadata_path.mkdir(exist_ok=True, parents=True)
+    documents_path = root / "documents"
+    documents_path.mkdir(exist_ok=True, parents=True)
+    min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
+    max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
+    download_url = conf.urls.download
+
+    all_paths = list(metadata_path.glob("*.json"))
+
+    logger.debug(f"Pulling attachments for {len(all_paths)} JSON files.")
+
+    results = Parallel(n_jobs=8)(
+        delayed(_pull_all_attachments)(path, documents_path, min_date, max_date, download_url)
+        for path in tqdm(all_paths, disable=not get_verbosity())
+    )
+
+    # Sum up how many were successfully updated
+    count_updated = sum(results)  # type: ignore
+
+    logger.info(f"Number of attachments pulled: {count_updated}")
