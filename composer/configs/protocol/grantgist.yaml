@@ -46,6 +46,8 @@ config:
 
   # Disqualifies documents that contain the following strings:
   disqualifying_strings:
+
+    # Disqualifies pdfs which require a certain version of adobe to load
     - "The document you are trying to load requires Adobe Reader 8 or higher"
 
 defaults:
