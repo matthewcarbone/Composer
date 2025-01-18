@@ -598,7 +598,7 @@ def _get_unique_identifier(metadata: Dict[str, str]) -> str:
 def write_vectorstore(vectorstore: VectorStore, p: Params):
     docs = []
     disqualifying_strings = p.disqualifying_strings
-    metadatas = vectorstore.get()["metadatas"]
+    metadatas = vectorstore.get()["metadatas"]  # type: ignore
     L = len(metadatas)
     logger.info(f"Processing data to vectorstore (found {L} in vectorstore already)")
     existing_unique_ids = [_get_unique_identifier(xx) for xx in metadatas]
