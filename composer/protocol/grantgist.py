@@ -1,11 +1,9 @@
-import hashlib
 import json
 import logging
 import zipfile
-from collections import defaultdict
 from dataclasses import dataclass
-from datetime import datetime, timedelta
-from functools import cache
+from datetime import datetime
+from functools import cached_property
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Literal, Optional, Tuple
@@ -14,120 +12,295 @@ from uuid import uuid4
 import requests
 import rich
 import xmltodict
-from dateutil.relativedelta import relativedelta
-from hydra.conf import HydraConf
 from joblib import Memory, Parallel, delayed
-from monty.json import MSONable, load
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
 from rich import print as print
 from tqdm import tqdm
-from typing_extensions import Annotated, TypedDict
 
 from composer.global_state import get_memory_dir, get_verbosity
 from composer.utils import Timer, get_file_hash
 
 logger = logging.getLogger(__name__)
-# logging.basicConfig(level="INFO")
-
 memory = Memory(location=get_memory_dir(), verbose=int(get_verbosity()))
 
 
-@memory.cache(ignore=["stream"])
-def cached_get_request(url: str, stream: bool = True):
+@dataclass
+class Params:
     """
-    A GET request using a cached session.
+    Provides convenient, cached access to commonly used parameters
+    derived from a Hydra configuration object (`hydra_conf`).
+
+    Each property is evaluated once and then cached. Debug-level logs
+    are triggered whenever a property is first accessed, showing the
+    computed values (except for the config itself, which really bloats the
+    debug log).
+    """
+
+    hydra_conf: DictConfig
+
+    @cached_property
+    def today(self) -> str:
+        """
+        Returns:
+            str: The 'today' value from `hydra_conf`, representing
+            the current processing date.
+        """
+        value = self.hydra_conf.today
+        logger.debug(f"Accessed 'today' property with value: {value}")
+        return value
+
+    @cached_property
+    def conf(self) -> DictConfig:
+        """
+        Returns:
+            DictConfig: The 'protocol.config' section from `hydra_conf`,
+            containing configuration details (e.g., root paths, URLs,
+            date ranges).
+        """
+        return self.hydra_conf.protocol.config
+
+    @cached_property
+    def extracts_filename(self) -> str:
+        """
+        Returns:
+            str: The filename (without extension) for the extracts file,
+            as specified in `conf`.
+        """
+        value = self.conf.extracts_filename
+        logger.debug(f"Accessed 'extracts_filename' property with value: {value}")
+        return value
+
+    @cached_property
+    def root(self) -> Path:
+        """
+        Returns:
+            Path: The root directory for storing metadata, documents,
+            and other downloaded artifacts. Created if it doesn't exist.
+        """
+        value = Path(self.conf.root)
+        logger.debug(f"Accessed 'root' property with value: {value}")
+        return value
+
+    @cached_property
+    def metadata_path(self) -> Path:
+        """
+        Returns:
+            Path: The path to the 'metadata' directory. Created if
+            it doesn't exist.
+        """
+        path_value = self.root / "metadata"
+        path_value.mkdir(exist_ok=True, parents=True)
+        logger.debug(f"Accessed 'metadata_path': created directory at {path_value}")
+        return path_value
+
+    @cached_property
+    def documents_path(self) -> Path:
+        """
+        Returns:
+            Path: The path to the 'documents' directory. Created if
+            it doesn't exist.
+        """
+        path_value = self.root / "documents"
+        path_value.mkdir(exist_ok=True, parents=True)
+        logger.debug(f"Accessed 'documents_path': created directory at {path_value}")
+        return path_value
+
+    @cached_property
+    def min_date(self) -> datetime:
+        """
+        Returns:
+            datetime: The earliest (inclusive) date for processing
+            opportunities, parsed from `conf.min_date`.
+        """
+        value = datetime.strptime(str(self.conf.min_date), "%Y%m%d")
+        logger.debug(f"Accessed 'min_date' with value: {value}")
+        return value
+
+    @cached_property
+    def max_date(self) -> datetime:
+        """
+        Returns:
+            datetime: The latest (inclusive) date for processing
+            opportunities, parsed from `conf.max_date`.
+        """
+        value = datetime.strptime(str(self.conf.max_date), "%Y%m%d")
+        logger.debug(f"Accessed 'max_date' with value: {value}")
+        return value
+
+    @cached_property
+    def urls(self) -> DictConfig:
+        """
+        Returns:
+            DictConfig: The 'urls' sub-section from `conf`, containing
+            endpoints for extracts, details, and file downloads.
+        """
+        url_data = self.conf.urls
+        logger.debug(f"Accessed 'urls' property with value: {url_data}")
+        return url_data
+
+    @cached_property
+    def extract_zip_target(self) -> str:
+        """
+        Returns:
+            str: The complete URL for the ZIP file containing extracts,
+            constructed from `urls.extracts` and `extracts_filename`.
+        """
+        target = f"{self.urls.extracts}/{self.extracts_filename}.zip"
+        logger.debug(f"Accessed 'extract_zip_target' with value: {target}")
+        return target
+
+    @cached_property
+    def details_url(self) -> str:
+        """
+        Returns:
+            str: The URL endpoint for fetching opportunity details,
+            derived from `urls.details`.
+        """
+        value = self.urls.details
+        logger.debug(f"Accessed 'details_url' property with value: {value}")
+        return value
+
+    @cached_property
+    def download_url(self) -> str:
+        """
+        Returns:
+            str: The URL endpoint for downloading attachments,
+            derived from `urls.download`.
+        """
+        value = self.urls.download
+        logger.debug(f"Accessed 'download_url' property with value: {value}")
+        return value
+
+    @cached_property
+    def n_jobs(self) -> int:
+        """
+        Returns:
+            int: The number of parallel jobs to use in joblib calls. Defaults
+            to the number of processors on the machine. Note that this
+            specifies the number of 'threads' when making http calls, so be
+            sure to respect rate limits, be decent and whatnot.
+        """
+        value = self.hydra_conf.n_jobs
+        logger.debug(f"Accessed 'n_jobs' property with value: {value}")
+        return value
+
+
+@memory.cache(ignore=["stream"])
+def cached_get_request(url: str, stream: bool = True) -> requests.Response:
+    """
+    A GET request using a cached session via joblib Memory.
+
+    This function is useful for large downloads that should not be
+    re-downloaded unnecessarily. The `stream` parameter is ignored
+    by the cache, meaning it will not affect cache hits.
 
     Args:
         url (str): The URL endpoint to send the GET request to.
-        stream (bool, optional): Whether to stream the response. Defaults to True.
+        stream (bool, optional): Whether to stream the response.
+            Defaults to True.
 
     Returns:
-        Response: The response object from the GET request.
+        requests.Response: The response object from the GET request.
 
     Raises:
         HTTPError: If the request returned an unsuccessful status code.
     """
-    logger.debug(f"Calling cached_get_request with url {url}")
+    logger.debug(f"Entering cached_get_request with url={url}, stream={stream}")
 
-    # Since requests is synchronous, run in a thread to avoid blocking event loop.
     response = requests.get(url, stream=stream)
+    logger.debug(f"Finished GET request to {url} with status code {response.status_code}")
+
     if response.status_code != 200:
         logger.warning(f"GET request returned status code {response.status_code} for {url}")
     response.raise_for_status()
-    logger.debug(f"Received response (status code {response.status_code}) for GET {url}.")
+
+    logger.debug("Leaving cached_get_request, returning response")
     return response
 
 
 @memory.cache
-def cached_post_request(url: str, **params):
+def cached_post_request(url: str, **params) -> requests.Response:
     """
-    A POST request using a cached session.
+    A POST request using a cached session via joblib Memory.
+
+    The request is cached based on the URL and keyword parameters.
+    If the same request is made with identical parameters, the cached
+    response will be returned rather than re-issuing the POST request.
 
     Args:
         url (str): The URL endpoint to send the POST request to.
-        **params: Arbitrary keyword arguments for the POST request body or settings.
+        **params: Arbitrary keyword arguments for the POST request body
+            or settings.
 
     Returns:
-        Response: The response object from the POST request.
+        requests.Response: The response object from the POST request.
 
     Raises:
         HTTPError: If the request returned an unsuccessful status code.
     """
-    logger.debug(f"Calling cached_post_request with url {url} and params {params}")
+    logger.debug(f"Entering cached_post_request with url={url} and params={params}")
 
-    # Since requests is synchronous, run in a thread to avoid blocking event loop.
     response = requests.post(url, **params)
+    logger.debug(f"Finished POST request to {url} with status code {response.status_code}")
+
     if response.status_code != 200:
         logger.warning(f"POST request returned status code {response.status_code} for {url}")
     response.raise_for_status()
-    logger.debug(f"Received response (status code {response.status_code}) for POST {url}.")
+
+    logger.debug("Leaving cached_post_request, returning response")
     return response
 
 
 @memory.cache(ignore=["data"])
-def cached_xmltodict(date, data):
-    return xmltodict.parse(data)
+def cached_xmltodict(date: str, data: str) -> Dict[str, Any]:
+    """
+    Parses XML data into a dictionary using `xmltodict` and caches the result.
+
+    The 'data' parameter is excluded from caching to avoid creating
+    enormous cache keys when dealing with large XML strings. Instead,
+    only the 'date' parameter is factored into the cache key.
+
+    Args:
+        date (str): A date string (used to differentiate cache entries).
+        data (str): The XML string to parse into a dictionary.
+
+    Returns:
+        Dict[str, Any]: The parsed XML data as a dictionary.
+    """
+    logger.debug(f"Entering cached_xmltodict for date={date}. Parsing XML data.")
+    parsed_data = xmltodict.parse(data)
+    logger.debug("Leaving cached_xmltodict, returning parsed data")
+    return parsed_data
 
 
 def pull_grants_gov_extract(hydra_conf: DictConfig):
     """
-    Pull the grants.gov extract to a temporary directory, then extract
-    it into the metadata directory. The requests calls are cached, so
-    the XML file itself is not saved in the cache. The metadata directory
-    will contain:
+    Pull the grants.gov extract into a temporary directory and extract it
+    into the metadata directory. The requests calls are cached to avoid
+    re-downloading files unnecessarily.
 
-    - A JSON file for each opportunity (with metadata).
-    - A 'hash_state.json' that contains file hashes to track changes.
+    The resulting metadata directory will contain:
+        - A JSON file for each opportunity (with metadata).
+        - A 'hash_state.json' (if implemented) to track file changes.
 
     Args:
-        hydra_conf (DictConfig): The Hydra configuration object that contains
-            protocol configuration settings, such as root paths, URLs, filenames,
-            date ranges, etc.
+        hydra_conf (DictConfig): The Hydra configuration object that
+            contains protocol configuration settings, such as root paths,
+            URLs, filenames, date ranges, etc.
     """
-
-    today = hydra_conf.today
-    conf = hydra_conf.protocol.config
-    root = Path(conf.root)
-    metadata_path = root / "metadata"
-    metadata_path.mkdir(exist_ok=True, parents=True)
-    min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
-    max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
-
-    extracts_filename = conf.extracts_filename
+    p = Params(hydra_conf)  # Instantiate the Params object
 
     with TemporaryDirectory() as tempdir:
         tempdir = Path(tempdir)
-        file_xml = tempdir / f"{extracts_filename}.xml"
-        file_zip = tempdir / f"{extracts_filename}.zip"
+        file_xml = tempdir / f"{p.extracts_filename}.xml"
+        file_zip = tempdir / f"{p.extracts_filename}.zip"
 
-        # Download and extract the zip file
-        url = f"{conf.urls.extracts}/{extracts_filename}.zip"
+        # Download and extract the ZIP file
         with Timer() as timer:
-            logger.info(f"Fetching ZIP file from {url} or cache...")
-            response = cached_get_request(url, stream=True)
+            response = cached_get_request(p.extract_zip_target, stream=True)
 
-            # Write ZIP to disk in chunks
+            logger.debug(f"Writing ZIP file to {file_zip}")
             with open(file_zip, "wb") as f:
                 for chunk in response.iter_content(chunk_size=8192):
                     if not chunk:
@@ -139,51 +312,73 @@ def pull_grants_gov_extract(hydra_conf: DictConfig):
             # Extract ZIP
             try:
                 with zipfile.ZipFile(file_zip) as zf:
-                    logger.debug(f"Extracting {file_zip} to {tempdir}")
+                    logger.debug(f"Extracting {file_zip} to temporary directory {tempdir}")
                     zf.extractall(tempdir)
             except zipfile.BadZipFile as e:
                 logger.error(f"Failed to extract {file_zip}: {e}")
-                return  # Exit early if ZIP is invalid
+                logger.info("Exiting pull_grants_gov_extract early due to bad ZIP file.")
+                return
 
         logger.info(f"XML file pulled and extracted in {timer.elapsed:.02f} s")
 
+        # Read the extracted XML
         with Timer() as timer:
             if not file_xml.exists():
                 logger.error(f"Expected XML file {file_xml} not found after extraction.")
+                logger.info("Exiting pull_grants_gov_extract early due to missing XML file.")
                 return
+            logger.debug(f"Reading XML file from {file_xml}")
             with open(file_xml, "r", encoding="utf-8") as f:
                 data = f.read()
         logger.info(f"XML file read in {timer.elapsed:.02f} s")
 
     # Convert XML to dictionary
+    logger.debug("Converting XML data to dictionary via cached_xmltodict")
     with Timer() as timer:
-        data = cached_xmltodict(today, data)
+        data = cached_xmltodict(p.today, data)
     logger.info(f"XML file parsed to dictionary in {timer.elapsed:.02f} s")
 
+    # The XML structure is assumed to be data["Grants"]["OpportunitySynopsisDetail_1_0"]
     data = data["Grants"]["OpportunitySynopsisDetail_1_0"]
     logger.info("Saving JSON metadata files for each valid opportunity...")
 
-    # Save all of the metadata inside the date range
+    # Save all metadata within the configured date range
     with Timer() as timer:
         count_saved = 0
         for opportunity in data:
             post_date = datetime.strptime(opportunity["PostDate"], "%m%d%Y")
-            if min_date <= post_date <= max_date:
+            if p.min_date <= post_date <= p.max_date:
                 uid = opportunity["OpportunityID"]
-                path = metadata_path / f"{uid}.json"
+                path = p.metadata_path / f"{uid}.json"
+                logger.debug(f"Saving JSON file for opportunity ID={uid} to {path}")
                 with open(path, "w", encoding="utf-8") as f:
                     json.dump(opportunity, f, indent=4)
                 count_saved += 1
+
         logger.debug(f"Number of opportunities saved: {count_saved}")
 
     logger.info(f"JSON files written in {timer.elapsed:.02f} s")
 
 
-def update_opportunity_details(path: Path, min_date: datetime, max_date: datetime, details_url: str) -> int:
+def _update_opportunity_details(
+    path: Path, min_date: datetime, max_date: datetime, details_url: str
+) -> int:
     """
-    Read opportunity JSON from `path`, fetch additional details if in range,
-    write updated JSON, and return 1 if updated, else 0.
+    Read an opportunity JSON from `path`, fetch additional details if within
+    the specified date range, and write updated JSON back to disk.
+
+    Args:
+        path (Path): The path to the JSON file that contains the basic
+            opportunity data.
+        min_date (datetime): The earliest date for which we update details.
+        max_date (datetime): The latest date for which we update details.
+        details_url (str): The endpoint for fetching opportunity details.
+
+    Returns:
+        int: Returns 1 if the JSON file was updated, otherwise 0.
     """
+    logger.debug(f"Entering update_opportunity_details for file={path.name}")
+
     with open(path, "r", encoding="utf-8") as f:
         opportunity = json.load(f)
 
@@ -193,55 +388,52 @@ def update_opportunity_details(path: Path, min_date: datetime, max_date: datetim
         return 0
 
     post_date = datetime.strptime(post_date_str, "%m%d%Y")
-
     if not (min_date <= post_date <= max_date):
-        logger.debug(f"Not in date range {path.name}")
+        logger.debug(f"{path.name} post_date={post_date} not in range, skipping update.")
         return 0
 
-    logger.debug(f"Pulling information for {path.name}")
+    logger.debug(f"Requesting additional details for OpportunityID={opportunity['OpportunityID']}")
     params = {"data": {"oppId": opportunity["OpportunityID"]}}
 
-    # Make the HTTP POST call (cached)
     response = cached_post_request(details_url, **params)
     if response is None:
-        logger.warning(f"Received None response for {details_url}, skipping update.")
+        logger.warning(
+            f"Received None response for details request to {details_url}, skipping update."
+        )
         return 0
 
     # Update the in-memory object
+    logger.debug(f"Updating in-memory object for {path.name} with new details.")
     opportunity["@details"] = response.json()
 
     # Write JSON back to disk
+    logger.debug(f"Writing updated opportunity data back to {path}")
     with open(path, "w", encoding="utf-8") as f:
         json.dump(opportunity, f, indent=4)
 
+    logger.debug(f"Leaving update_opportunity_details for file={path.name} (updated).")
     return 1
 
 
 def pull_details(hydra_conf: DictConfig):
     """
-    Pull additional details for each opportunity within the configured date range
-    and update the local JSON metadata files.
+    Pulls additional details for each opportunity within the configured
+    date range and updates the corresponding JSON files in the metadata
+    directory.
 
     Args:
         hydra_conf (DictConfig): The Hydra configuration object that contains
-            protocol configuration settings, such as root paths, URLs, filenames,
-            date ranges, etc.
+            protocol configuration settings, such as root paths, URLs,
+            filenames, date ranges, etc.
     """
+    p = Params(hydra_conf)
 
-    conf = hydra_conf.protocol.config
-    root = Path(conf.root)
-    metadata_path = root / "metadata"
-    metadata_path.mkdir(exist_ok=True, parents=True)
-    min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
-    max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
-    details_url = conf.urls.details
+    all_paths = list(p.metadata_path.glob("*.json"))
+    logger.debug(f"Found {len(all_paths)} JSON files to process for detail updates.")
 
-    # Gather all *.json file paths
-    all_paths = list(metadata_path.glob("*.json"))
-    logger.debug(f"Found {len(all_paths)} JSON files to process.")
-
-    results = Parallel(n_jobs=8)(
-        delayed(update_opportunity_details)(path, min_date, max_date, details_url)
+    # Parallel processing of all JSON files
+    results = Parallel(n_jobs=p.n_jobs)(
+        delayed(_update_opportunity_details)(path, p.min_date, p.max_date, p.details_url)
         for path in tqdm(all_paths, disable=not get_verbosity())
     )
 
@@ -249,11 +441,35 @@ def pull_details(hydra_conf: DictConfig):
     count_updated = sum(results)  # type: ignore
 
     logger.info(f"Number of opportunities updated with details: {count_updated}")
+    logger.info("Finished pull_details procedure")
 
 
 def _pull_all_attachments(
-    load_path: Path, target_directory: Path, min_date: datetime, max_date: datetime, download_url: str
+    load_path: Path,
+    target_directory: Path,
+    min_date: datetime,
+    max_date: datetime,
+    download_url: str,
 ) -> int:
+    """
+    Read opportunity JSON from `load_path`, check if it is within the specified
+    date range, and then download relevant attachments (in this case, PDFs)
+    to `target_directory`.
+
+    For each attachment, a folder is created based on the OpportunityID and
+    attachment ID, and the file is saved there.
+
+    Args:
+        load_path (Path): The path to the JSON file containing the opportunity data.
+        target_directory (Path): The path where attachments should be saved.
+        min_date (datetime): The earliest date to process attachments.
+        max_date (datetime): The latest date to process attachments.
+        download_url (str): The base URL used to download attachments.
+
+    Returns:
+        int: The number of attachments successfully downloaded for this file.
+    """
+    logger.debug(f"Entering _pull_all_attachments for file={load_path.name}")
     with open(load_path, "r", encoding="utf-8") as f:
         opportunity = json.load(f)
 
@@ -263,62 +479,74 @@ def _pull_all_attachments(
         return 0
 
     post_date = datetime.strptime(post_date_str, "%m%d%Y")
-
     if not (min_date <= post_date <= max_date):
-        logger.debug(f"Not in date range {load_path.name}")
+        logger.debug(
+            f"{load_path.name} post_date={post_date} not in range, skipping attachment download."
+        )
         return 0
 
     counter = 0
     opportunity_id = str(opportunity["OpportunityID"])
+    logger.debug(f"Pulling attachments for OpportunityID={opportunity_id}")
     folders = opportunity["@details"]["synopsisAttachmentFolders"]
-    target_directory = Path(target_directory)
+
     for folder in folders:
         for attachment in folder["synopsisAttachments"]:
             attachment_id = str(attachment["id"])
             attachment_type = attachment["mimeType"]
             attachment_name = attachment["fileName"]
-            condition1 = "application/pdf" == attachment_type
-            condition2 = ".pdf" in attachment_name
-            if condition1 and condition2:
+
+            # We're specifically pulling PDFs
+            is_pdf_type = attachment_type == "application/pdf"
+            has_pdf_ext = ".pdf" in attachment_name.lower()
+            if is_pdf_type and has_pdf_ext:
                 url = f"{download_url}/{attachment_id}"
+                logger.debug(f"Downloading attachment {attachment_id} from {url}")
                 response = cached_get_request(url, stream=True)
                 if response is None:
-                    logger.warning(f"Received None response for {download_url}, skipping update.")
+                    logger.warning(f"Received None response for {url}, skipping this attachment.")
                     continue
 
                 filename = sanitize_filename(attachment_name).replace(" ", "_")
                 file_dir = target_directory / opportunity_id / attachment_id
                 file_dir.mkdir(exist_ok=True, parents=True)
                 file_target = file_dir / filename
+
+                logger.debug(f"Writing attachment to {file_target}")
                 with open(file_target, "wb") as f:
                     f.write(response.content)
 
                 counter += 1
 
+    logger.debug(
+        f"Leaving _pull_all_attachments for file={load_path.name}, downloaded={counter} attachments."
+    )
     return counter
 
 
 def pull_pdfs(hydra_conf: DictConfig):
-    conf = hydra_conf.protocol.config
-    root = Path(conf.root)
-    metadata_path = root / "metadata"
-    metadata_path.mkdir(exist_ok=True, parents=True)
-    documents_path = root / "documents"
-    documents_path.mkdir(exist_ok=True, parents=True)
-    min_date = datetime.strptime(str(conf.min_date), "%Y%m%d")
-    max_date = datetime.strptime(str(conf.max_date), "%Y%m%d")
-    download_url = conf.urls.download
+    """
+    Pulls PDF attachments for each opportunity within the configured date range
+    and saves them in a structured directory under 'documents/'.
 
-    all_paths = list(metadata_path.glob("*.json"))
+    Args:
+        hydra_conf (DictConfig): The Hydra configuration object that contains
+            protocol configuration settings, such as root paths, URLs,
+            filenames, date ranges, etc.
+    """
+    p = Params(hydra_conf)
 
-    logger.debug(f"Pulling attachments for {len(all_paths)} JSON files.")
+    all_paths = list(p.metadata_path.glob("*.json"))
+    logger.debug(f"Preparing to pull attachments from {len(all_paths)} opportunity files.")
 
-    results = Parallel(n_jobs=8)(
-        delayed(_pull_all_attachments)(path, documents_path, min_date, max_date, download_url)
+    results = Parallel(n_jobs=p.n_jobs)(
+        delayed(_pull_all_attachments)(
+            path, p.documents_path, p.min_date, p.max_date, p.download_url
+        )
         for path in tqdm(all_paths, disable=not get_verbosity())
     )
 
-    # Sum up how many were successfully updated
+    # Sum up how many attachments were successfully downloaded
     count_updated = sum(results)  # type: ignore
 
     logger.info(f"Number of attachments pulled: {count_updated}")
