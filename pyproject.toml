@@ -19,7 +19,6 @@ dependencies = [
     "langchain-text-splitters>=0.3.4",
     "langgraph>=0.2.60",
     "lark>=1.2.2",
-    "monty>=2025.1.9",
     "pathvalidate>=3.2.3",
     "pypdf>=5.1.0",
     "python-dotenv>=1.0.1",
