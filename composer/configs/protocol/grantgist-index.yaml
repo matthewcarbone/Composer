@@ -1,7 +1,0 @@
-obj:
-  _target_: composer.protocol.grantgist.GrantGistIndex
-  _partial_: true
-
-defaults:
-  - _self_
-  - /_internal/grantgist@config: common-config.yaml

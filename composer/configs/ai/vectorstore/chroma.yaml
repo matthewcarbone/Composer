@@ -1,0 +1,7 @@
+_target_: langchain_chroma.Chroma
+_partial_: true
+client_settings:
+  _target_: chromadb.Settings
+  is_persistent: true
+  anonymized_telemetry: false
+  persist_directory: ${protocol.config.root}/chromadb

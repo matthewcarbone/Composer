@@ -1,0 +1,2 @@
+_target_: langchain_openai.OpenAIEmbeddings
+model: "text-embedding-3-small"

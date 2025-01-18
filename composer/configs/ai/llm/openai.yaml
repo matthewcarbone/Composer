@@ -1,0 +1,2 @@
+_target_: langchain_openai.ChatOpenAI
+model: "gpt-4o-mini"

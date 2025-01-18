@@ -1,0 +1,3 @@
+_target_: langchain_ollama.ChatOllama
+model: llama3.2:3b
+base_url: "http://localhost:11434"

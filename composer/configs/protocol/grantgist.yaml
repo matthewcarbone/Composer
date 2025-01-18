@@ -5,6 +5,9 @@ targets:
   pull_details:
     _target_: composer.protocol.grantgist.pull_details
     _partial_: true
+  pull_pdfs:
+    _target_: composer.protocol.grantgist.pull_pdfs
+    _partial_: true
 
 config:
 
@@ -20,17 +23,11 @@ config:
     details: "https://apply07.grants.gov/grantsws/rest/opportunity/details"
     extracts: "https://prod-grants-gov-chatbot.s3.amazonaws.com/extracts"
 
-  # Vectorstore instance
-  vectorstore: ...
-
-  # LLM instance
-  llm: null
-
   min_date: ${today}
   max_date: ${today}
 
-
-# keeping this here just in case 
-# defaults:
-#   - _self_
-#   - /_internal/grantgist@config: common-config.yaml
+defaults:
+  - _self_
+  - /ai/llm@config.llm: ollama.yaml 
+  - /ai/embeddings@config.embeddings: ollama.yaml
+  - /ai/vectorstore@config.vectorstore: chroma.yaml

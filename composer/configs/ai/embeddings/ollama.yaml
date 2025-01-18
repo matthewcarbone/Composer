@@ -1,0 +1,3 @@
+_target_: langchain_ollama.OllamaEmbeddings
+model: mxbai-embed-large
+base_url: "http://localhost:11434"

@@ -1,0 +1,5 @@
+_target_: langchain_openai.AzureChatOpenAI
+deployment_name: use-o1
+openai_api_version: 2024-12-01-preview
+api_key: ${oc.env:AZURE_OPENAI_API_KEY_o1,null}
+azure_endpoint: ${oc.env:AZURE_OPENAI_ENDPOINT_o1,null}
