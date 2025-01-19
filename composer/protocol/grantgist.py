@@ -189,7 +189,7 @@ class Params:
 
     @cached_property
     def embedding_model(self) -> Any:
-        return self.conf.embeddings
+        return self.hydra_conf.ai.embeddings
 
     def initialize_vectorstore(self):
         """

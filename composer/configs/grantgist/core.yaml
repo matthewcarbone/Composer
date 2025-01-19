@@ -3,6 +3,7 @@ defaults:
   - paths: default.yaml
   - hydra: default.yaml
   - protocol: default.yaml
+  - ai: ollama.yaml
 
 dryrun: false
 
