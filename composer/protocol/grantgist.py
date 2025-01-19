@@ -221,7 +221,7 @@ class Params:
 
     @cached_property
     def textsplitter(self):
-        return self.conf.textsplitter
+        return self.hydra_conf.ai.textsplitter
 
 
 @memory.cache(ignore=["stream"])
