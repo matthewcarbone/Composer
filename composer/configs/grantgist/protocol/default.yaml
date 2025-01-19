@@ -1,3 +1,10 @@
+run:
+  - "pull_grants_gov_extract"
+  - "pull_details"
+  - "pull_pdfs"
+  - "construct_vectorstore"
+  - "summarize_grants"
+
 targets:
   pull_grants_gov_extract:
     _target_: composer.protocol.grantgist.pull_grants_gov_extract

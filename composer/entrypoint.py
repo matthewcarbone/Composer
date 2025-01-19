@@ -27,6 +27,8 @@ def run_grantgist(hydra_conf):
         hydra_conf = hydra.utils.instantiate(hydra_conf)
         logger.debug(f"hydra_conf: \n{hydra_conf}")
         for name, target in hydra_conf.protocol.targets.items():
+            if name not in hydra_conf.protocol.run:
+                logger.warning(f"Skipping target {name}")
             logger.info(f"Executing: {name}")
             with Timer() as timer:
                 target(hydra_conf)
