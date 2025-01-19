@@ -26,9 +26,18 @@ def run_grantgist(hydra_conf):
         set_global_state_information(hydra_conf)
         hydra_conf = hydra.utils.instantiate(hydra_conf)
         logger.debug(f"hydra_conf: \n{hydra_conf}")
+        if len(hydra_conf.protocol.run) < 1:
+            logger.critical(f"You must specify at least one run event")
+            exit(1)
+        if any([xx not in hydra_conf.protocol.targets.keys() for xx in hydra_conf.protocol.run]):
+            logger.critical(
+                f"All run events ({hydra_conf.protocol.run}) must be one of {hydra_conf.protocol.targets.keys()}"
+            )
+            exit(1)
         for name, target in hydra_conf.protocol.targets.items():
             if name not in hydra_conf.protocol.run:
                 logger.warning(f"Skipping target {name}")
+                continue
             logger.info(f"Executing: {name}")
             with Timer() as timer:
                 target(hydra_conf)
