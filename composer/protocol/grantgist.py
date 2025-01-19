@@ -14,11 +14,17 @@ import rich
 import xmltodict
 from joblib import Memory, Parallel, delayed
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_core.documents import Document
+from langchain_core.prompts import PromptTemplate
+from langchain_core.tools import tool
 from langchain_core.vectorstores import VectorStore
+from langgraph.prebuilt import ToolNode
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
+from pydantic import BaseModel, Field
 from rich import print as print
 from tqdm import tqdm
+from typing_extensions import Annotated, TypedDict
 
 from composer.global_state import get_memory_dir, get_verbosity
 from composer.utils import Timer, get_file_hash
@@ -201,14 +207,6 @@ class Params:
             collection_name=name, embedding_function=self.embedding_model
         )
 
-    def initialize_retriever(self, vectorstore):
-        """
-        Initializes the retriever object from the vectorstore.
-        """
-
-        kwargs = self.conf.retriever_kwargs
-        return vectorstore.as_retriever(**kwargs)
-
     @cached_property
     def max_docs_per_embedding_call(self) -> int:
         value = self.conf.max_docs_per_embedding_call
@@ -222,6 +220,10 @@ class Params:
     @cached_property
     def textsplitter(self):
         return self.hydra_conf.ai.textsplitter
+
+    @cached_property
+    def llm(self):
+        return self.hydra_conf.ai.llm
 
 
 @memory.cache(ignore=["stream"])
@@ -597,7 +599,7 @@ def _get_unique_identifier(metadata: Dict[str, str]) -> str:
     return f"{source_api}-{opportunity_id}-{document_id}"
 
 
-def write_vectorstore(vectorstore: VectorStore, p: Params):
+def _write_vectorstore(vectorstore: VectorStore, p: Params):
     docs = []
     disqualifying_strings = p.disqualifying_strings
     metadatas = vectorstore.get()["metadatas"]  # type: ignore
@@ -659,4 +661,70 @@ def construct_vectorstore(hydra_conf: DictConfig):
 
     p = Params(hydra_conf)
     vectorstore = p.initialize_vectorstore()
-    write_vectorstore(vectorstore, p)
+    _write_vectorstore(vectorstore, p)
+
+
+def _summarize_grant(metadata_file: Path, p: Params):
+    with open(metadata_file, "r") as f:
+        metadata = json.load(f)
+
+    title = metadata["OpportunityTitle"]
+    foa_number = metadata["OpportunityNumber"]
+    agency = metadata["AgencyName"]
+    dt_postdate = datetime.strptime(metadata["PostDate"], "%m%d%Y")
+    postdate = dt_postdate.strftime("%d %B %Y")
+
+    # Execute summaries with the LLM to a variety of prompts
+    vectorstore = p.initialize_vectorstore()
+    opportunity_id = metadata["OpportunityId"]
+    r_kwargs = p.conf.retriever_kwargs
+    kwargs = {"k": r_kwargs["k"], "filter": {"OpportunityId": opportunity_id}}
+    retriever = vectorstore.as_retriever(**kwargs)
+
+    # Define the tool dynamically as a function of the global retriever
+    @tool(response_format="content_and_artifact")
+    def get_grant_information(
+        query: Annotated[str, ..., "Search query to run."],
+    ) -> Tuple[str, List[Document]]:
+        """Tool for retrieving grant information from a database of grants."""
+
+        docs = retriever.invoke(query)
+        serialized = "\n\n".join(
+            (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}") for doc in docs
+        )
+        return serialized, docs
+
+    class Response(BaseModel):
+        summary: str = Field(description="Summary of the funding opportunity.")
+        relevancy: str = Field(description="Relevancy to the Department of Energy.")
+
+    model = p.llm.bind_tools([get_grant_information]).llm_with_structured_output(Response)
+
+    response = model.invoke(
+        {
+            "system": "You are an expert at summarizing grants. You will be provided access to a database containing exactly one funding opportunity. Each of your responses should be roughly one paragraph long. You should attempt to be concise when possible, but do not skip important details for the sake of brevity. Make as many calls to the tool as needed to answer all questions.",
+            "user": "Summarize the funding opportunity and its relevancy to the Department of Energy.",
+        }
+    )
+
+    summary = f"""
+Title (NOFO):     {title} ({foa_number})
+Issuing Agency:   {agency}
+Post Date:        {postdate}
+    """
+
+    print(response)
+
+
+def summarize_grants(hydra_conf: DictConfig):
+    """For each opportunity, uses RAG to summarize."""
+
+    p = Params(hydra_conf)
+
+    for metadata_file in p.metadata_path.glob("*.json"):
+        # testing
+        # use only the early career award
+        if "358302.json" not in str(metadata_file):
+            continue
+
+        _summarize_grant(metadata_file, p)

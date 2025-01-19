@@ -1,16 +1,20 @@
 targets:
-  pull_grants_gov_extract:
-    _target_: composer.protocol.grantgist.pull_grants_gov_extract
+  # pull_grants_gov_extract:
+  #   _target_: composer.protocol.grantgist.pull_grants_gov_extract
+  #   _partial_: true
+  # pull_details:
+  #   _target_: composer.protocol.grantgist.pull_details
+  #   _partial_: true
+  # pull_pdfs:
+  #   _target_: composer.protocol.grantgist.pull_pdfs
+  #   _partial_: true
+  # construct_vectorstore:
+  #   _target_: composer.protocol.grantgist.construct_vectorstore
+  #   _partial_: true
+  summarize_grants:
+    _target_: composer.protocol.grantgist.summarize_grants
     _partial_: true
-  pull_details:
-    _target_: composer.protocol.grantgist.pull_details
-    _partial_: true
-  pull_pdfs:
-    _target_: composer.protocol.grantgist.pull_pdfs
-    _partial_: true
-  construct_vectorstore:
-    _target_: composer.protocol.grantgist.construct_vectorstore
-    _partial_: true
+  
 
 config:
 
@@ -30,15 +34,16 @@ config:
   max_date: ${today}
 
   retriever_kwargs: 
-    search_kwargs:
-
       # The number of documents to retrieve for each question
-      k: 10
+    k: 10
 
-      # Filters to apply to each search. For example, filtering by the
-      # office of science:
-      filter:
-        AgencyName: "Office of Science"
+    # search_kwargs:
+    #   k: 10
+    #
+    #   # Filters to apply to each search. For example, filtering by the
+    #   # office of science:
+    #   filter:
+    #     AgencyName: "Office of Science"
 
   # Chunks the calls to the embedding model so as to not overwhelm it with
   # too many requests at once

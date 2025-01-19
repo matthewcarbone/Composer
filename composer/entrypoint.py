@@ -15,10 +15,10 @@ def set_global_state_information(hydra_conf):
     memory_dir = Path(hydra_conf.protocol.config.root) / "memory"
     memory_dir.mkdir(exist_ok=True, parents=True)
     global_state.set_memory_dir(str(memory_dir))
-    logger.info(f"Memory directory set to {global_state.get_memory_dir()}")
+    logger.debug(f"Memory directory set to {global_state.get_memory_dir()}")
     verbosity = HydraConfig.get().verbose
     global_state.set_verbosity(verbosity)
-    logger.info(f"Verbose is {global_state.get_verbosity()}")
+    logger.debug(f"Verbose is {global_state.get_verbosity()}")
 
 
 def run_grantgist(hydra_conf):
