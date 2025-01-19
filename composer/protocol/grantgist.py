@@ -630,7 +630,7 @@ def write_vectorstore(vectorstore: VectorStore, p: Params):
                 page.metadata["source_api"] = "grants.gov"
                 page.metadata["OpportunityId"] = str(opportunity_id)
                 page.metadata["DocumentId"] = str(document_id)
-                page.metadata["page"] = page
+                page.metadata["page"] = ii
                 current_id = _get_unique_identifier(page.metadata)
                 if current_id in existing_unique_ids:
                     logger.debug(f"id {current_id} skipped, already exists in the database")
