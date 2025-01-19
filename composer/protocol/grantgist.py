@@ -665,9 +665,10 @@ def construct_vectorstore(hydra_conf: DictConfig):
 
 
 def _summarize_grant(metadata_file: Path, p: Params):
-    with open(metadata_file, "r") as f:
+    with open(metadata_file, "r") as f: 
         metadata = json.load(f)
 
+    print(metadata)
     title = metadata["OpportunityTitle"]
     foa_number = metadata["OpportunityNumber"]
     agency = metadata["AgencyName"]
@@ -676,7 +677,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     # Execute summaries with the LLM to a variety of prompts
     vectorstore = p.initialize_vectorstore()
-    opportunity_id = metadata["OpportunityId"]
+    opportunity_id = metadata["OpportunityID"]
     r_kwargs = p.conf.retriever_kwargs
     kwargs = {"k": r_kwargs["k"], "filter": {"OpportunityId": opportunity_id}}
     retriever = vectorstore.as_retriever(**kwargs)
@@ -698,13 +699,10 @@ def _summarize_grant(metadata_file: Path, p: Params):
         summary: str = Field(description="Summary of the funding opportunity.")
         relevancy: str = Field(description="Relevancy to the Department of Energy.")
 
-    model = p.llm.bind_tools([get_grant_information]).llm_with_structured_output(Response)
+    model = p.llm.bind_tools([get_grant_information]) # .with_structured_output(Response)
 
     response = model.invoke(
-        {
-            "system": "You are an expert at summarizing grants. You will be provided access to a database containing exactly one funding opportunity. Each of your responses should be roughly one paragraph long. You should attempt to be concise when possible, but do not skip important details for the sake of brevity. Make as many calls to the tool as needed to answer all questions.",
-            "user": "Summarize the funding opportunity and its relevancy to the Department of Energy.",
-        }
+        "You are an expert at summarizing grants. You will be provided access to a database containing exactly one funding opportunity. Each of your responses should be roughly one paragraph long. You should attempt to be concise when possible, but do not skip important details for the sake of brevity. Make as many calls to the tool as needed to answer all questions. Summarize the funding opportunity and its relevancy to the Department of Energy." 
     )
 
     summary = f"""
