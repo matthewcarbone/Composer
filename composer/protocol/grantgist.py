@@ -611,7 +611,7 @@ def write_vectorstore(vectorstore: VectorStore, p: Params):
             if len(document_path) != 1:
                 logger.error(f"Document path {document_path} should have only a single file")
             document_path = document_path[0]
-            document_id = document_path.stem
+            document_id = document_path_directory.stem
             loader = PyPDFLoader(str(document_path))
 
             # loaded_docs represents the pages of the pdf
