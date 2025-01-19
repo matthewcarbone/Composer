@@ -197,7 +197,9 @@ class Params:
         """
 
         name = f"grantgist-{self.embedding_model.model}"
-        return self.conf.vectorstore(collection_name=name, embedding_function=self.embedding_model)
+        return self.hydra_conf.ai.vectorstore(
+            collection_name=name, embedding_function=self.embedding_model
+        )
 
     def initialize_retriever(self, vectorstore):
         """
