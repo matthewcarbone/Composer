@@ -645,6 +645,8 @@ def write_vectorstore(vectorstore: VectorStore, p: Params):
     if p.textsplitter is not None:
         docs = p.textsplitter.split_documents(docs)
 
+    logger.info(f"Processing {len(docs)} instances to the vectorstore")
+
     for ii in range(0, len(docs), p.max_docs_per_embedding_call):
         chunk = docs[ii : ii + p.max_docs_per_embedding_call]
         _ = vectorstore.add_documents(documents=chunk)
