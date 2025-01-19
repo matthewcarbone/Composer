@@ -15,10 +15,12 @@ import xmltodict
 from joblib import Memory, Parallel, delayed
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_core.documents import Document
+from langchain_core.messages import SystemMessage
 from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
 from langchain_core.vectorstores import VectorStore
-from langgraph.prebuilt import ToolNode
+from langgraph.graph import END, START, MessagesState, StateGraph
+from langgraph.prebuilt import ToolNode, tools_condition
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
 from pydantic import BaseModel, Field
@@ -224,6 +226,14 @@ class Params:
     @cached_property
     def llm(self):
         return self.hydra_conf.ai.llm
+
+    @cached_property
+    def system_prompt(self) -> str:
+        return self.conf.system_prompt
+
+    @cached_property
+    def human_prompts(self) -> Dict[str, str]:
+        return self.conf.human_prompts
 
 
 @memory.cache(ignore=["stream"])
@@ -664,11 +674,13 @@ def construct_vectorstore(hydra_conf: DictConfig):
     _write_vectorstore(vectorstore, p)
 
 
+def _get_app(): ...
+
+
 def _summarize_grant(metadata_file: Path, p: Params):
-    with open(metadata_file, "r") as f: 
+    with open(metadata_file, "r") as f:
         metadata = json.load(f)
 
-    print(metadata)
     title = metadata["OpportunityTitle"]
     foa_number = metadata["OpportunityNumber"]
     agency = metadata["AgencyName"]
@@ -679,39 +691,70 @@ def _summarize_grant(metadata_file: Path, p: Params):
     vectorstore = p.initialize_vectorstore()
     opportunity_id = metadata["OpportunityID"]
     r_kwargs = p.conf.retriever_kwargs
-    kwargs = {"k": r_kwargs["k"], "filter": {"OpportunityId": opportunity_id}}
-    retriever = vectorstore.as_retriever(**kwargs)
 
-    # Define the tool dynamically as a function of the global retriever
+    search_kwargs = {"k": r_kwargs["k"], "filter": {"OpportunityId": opportunity_id}}
+
     @tool(response_format="content_and_artifact")
-    def get_grant_information(
-        query: Annotated[str, ..., "Search query to run."],
-    ) -> Tuple[str, List[Document]]:
-        """Tool for retrieving grant information from a database of grants."""
+    def retrieve(query: str) -> Tuple[str, Document]:
+        """Retrieve information related to a general query."""
 
-        docs = retriever.invoke(query)
+        retrieved_docs = vectorstore.similarity_search(query, **search_kwargs)
         serialized = "\n\n".join(
-            (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}") for doc in docs
+            (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}") for doc in retrieved_docs
         )
-        return serialized, docs
+        return serialized, retrieved_docs
 
-    class Response(BaseModel):
-        summary: str = Field(description="Summary of the funding opportunity.")
-        relevancy: str = Field(description="Relevancy to the Department of Energy.")
+    tools = [retrieve]
+    tool_node = ToolNode(tools)
+    model_with_tools = p.llm.bind_tools(tools)
 
-    model = p.llm.bind_tools([get_grant_information]) # .with_structured_output(Response)
+    def should_continue(state: MessagesState):
+        messages = state["messages"]
+        last_message = messages[-1]
+        if last_message.tool_calls:  # type: ignore
+            return "tools"
+        return END
 
-    response = model.invoke(
-        "You are an expert at summarizing grants. You will be provided access to a database containing exactly one funding opportunity. Each of your responses should be roughly one paragraph long. You should attempt to be concise when possible, but do not skip important details for the sake of brevity. Make as many calls to the tool as needed to answer all questions. Summarize the funding opportunity and its relevancy to the Department of Energy." 
-    )
+    def call_model(state: MessagesState):
+        messages = state["messages"]
+        response = model_with_tools.invoke(messages)
+        return {"messages": [response]}
+
+    workflow = StateGraph(MessagesState)
+
+    # Define the two nodes we will cycle between
+    workflow.add_node("agent", call_model)
+    workflow.add_node("tools", tool_node)
+
+    workflow.add_edge(START, "agent")
+    workflow.add_conditional_edges("agent", should_continue, ["tools", END])
+    workflow.add_edge("tools", "agent")
+
+    app = workflow.compile()
+
+    responses = []
+    for name, prompt in p.human_prompts.items():
+        for chunk in app.stream(
+            {"messages": [("system", p.system_prompt), ("human", prompt)]}, stream_mode="values"
+        ):
+            logger.debug(chunk["messages"][-1])
+        chunk0 = chunk["messages"][-1]  # type: ignore
+        ai_content = chunk0.content
+        try:
+            ai_metadata = chunk0.response_metadata
+        except:
+            logger.warning("response_metadata not found")
+
+        responses.append(f"{name} - {prompt}\n{ai_content}")
+    responses = "\n\n".join(responses)
 
     summary = f"""
 Title (NOFO):     {title} ({foa_number})
 Issuing Agency:   {agency}
 Post Date:        {postdate}
+{responses}
     """
-
-    print(response)
+    print(summary)
 
 
 def summarize_grants(hydra_conf: DictConfig):
