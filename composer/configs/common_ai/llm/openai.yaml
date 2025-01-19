@@ -1,2 +1,3 @@
 _target_: langchain_openai.ChatOpenAI
 model: "gpt-4o-mini"
+api_key: ${oc.env:OPENAI_API_KEY,null}

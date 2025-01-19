@@ -1,8 +1,8 @@
 defaults:
   - _self_
-  - protocol: ???
   - paths: default.yaml
   - hydra: default.yaml
+  - protocol: default.yaml
 
 dryrun: false
 
@@ -16,3 +16,8 @@ prompt: null
 force: false
 
 n_jobs: 8
+
+hydra: 
+  searchpath:
+    - pkg://composer.configs
+

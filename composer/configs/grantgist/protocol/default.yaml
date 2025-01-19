@@ -52,7 +52,7 @@ config:
 
 defaults:
   - _self_
-  - /ai/llm@config.llm: ollama.yaml 
-  - /ai/embeddings@config.embeddings: ollama.yaml
-  - /ai/vectorstore@config.vectorstore: chroma.yaml
-  - /ai/textsplitter@config.textsplitter: standard.yaml
+  - /common_ai/llm@config.llm: ollama.yaml 
+  - /common_ai/embeddings@config.embeddings: ollama.yaml
+  - /common_ai/vectorstore@config.vectorstore: chroma.yaml
+  - /common_ai/textsplitter@config.textsplitter: standard.yaml

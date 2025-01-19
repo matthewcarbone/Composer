@@ -21,7 +21,7 @@ def set_global_state_information(hydra_conf):
     logger.info(f"Verbose is {global_state.get_verbosity()}")
 
 
-def run(hydra_conf):
+def run_grantgist(hydra_conf):
     with Timer() as global_timer:
         set_global_state_information(hydra_conf)
         hydra_conf = hydra.utils.instantiate(hydra_conf)
@@ -34,18 +34,10 @@ def run(hydra_conf):
     logger.info(f"SUCCESS - {global_timer.elapsed:.02f} s")
 
 
-@hydra.main(version_base="1.3", config_path="configs", config_name="core.yaml")
-def hydra_main(hydra_conf):
-    """Executes training powered by Hydra, given the configuration file. Note
-    that Hydra handles setting up the hydra_conf.
-
-    Parameters
-    ----------
-    hydra_conf : omegaconf.DictConfig
-    """
-
-    run(hydra_conf)
+@hydra.main(version_base="1.3", config_path="configs/grantgist", config_name="core.yaml")
+def hydra_main_grantgist(hydra_conf):
+    run_grantgist(hydra_conf)
 
 
-def entrypoint():
-    hydra_main()
+def entrypoint_grantgist():
+    hydra_main_grantgist()

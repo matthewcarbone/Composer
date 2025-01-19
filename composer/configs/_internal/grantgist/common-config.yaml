@@ -1,5 +1,0 @@
-min_date: null
-max_date: ${today}
-root_dir: ${paths.home}/grantgist
-data_dir: ${paths.home}/grantgist/data
-chroma_dir: ${paths.home}/grantgist/chroma

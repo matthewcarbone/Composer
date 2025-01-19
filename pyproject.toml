@@ -36,7 +36,7 @@ build-backend = "hatchling.build"
 path = "composer/_version.py"
 
 [project.scripts]
-composer = "composer.entrypoint:entrypoint"
+grantgist = "composer.entrypoint:entrypoint_grantgist"
 
 [tool.ruff]
 line-length = 100

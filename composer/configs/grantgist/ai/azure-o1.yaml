@@ -1,0 +1,6 @@
+defaults:
+  - _self_
+  - /common_ai/llm@llm: azure-openai-o1.yaml
+  - /common_ai/embeddings@embeddings: azure-openai.yaml
+  - /common_ai/textsplitter@textsplitter: standard.yaml
+  - /common_ai/vectorstore@vectorstore: chroma.yaml
