@@ -751,10 +751,24 @@ def _summarize_grant(metadata_file: Path, p: Params):
     summary = f"""
 Title (NOFO):     {title} ({foa_number})
 Issuing Agency:   {agency}
-Post Date:        {postdate}
+Post Date:        {postdate}\n\n
 {responses}
     """
-    print(summary)
+
+    prompt = "Your only task is to neatly format provided text into Markdown format."
+    for chunk in app.stream(
+        {"messages": [("system", prompt), ("human", summary)]}, stream_mode="values"
+    ):
+        logger.debug(chunk["messages"][-1])
+    chunk0 = chunk["messages"][-1]  # type: ignore
+    ai_content = chunk0.content
+    try:
+        ai_metadata = chunk0.response_metadata
+    except:
+        logger.warning("response_metadata not found")
+
+    with open("tmp.md", "w") as f:
+        f.write(ai_content)
 
 
 def summarize_grants(hydra_conf: DictConfig):
