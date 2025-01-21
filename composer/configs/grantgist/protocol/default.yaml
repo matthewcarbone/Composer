@@ -62,9 +62,15 @@ config:
     # Disqualifies pdfs which require a certain version of adobe to load
     - "The document you are trying to load requires Adobe Reader 8 or higher"
 
-  system_prompt: "You will be provided with questions about funding opportunities sponsored by the United States government. You will have access to a database containing information about a single funding opportunity. You will respond to the user query as succinctly as possible, but not at the expense of key information. Try to keep responses to 3 sentences or less. Make as many queries to the database as necessary to fully answer the question."
+  system_prompt: >
+    You will be provided with questions about funding opportunities sponsored
+    by the United States government. You will have access to a database
+    containing information about a single funding opportunity. You will
+    respond to the user query as succinctly as possible, but not at the
+    expense of key information. Try to keep responses to 3 sentences or less.
+    Make as many queries to the database as necessary to fully answer the question."
 
   human_prompts:
-    summary: "Summarize this grant opportunity in 3 sentences or less."
-    funding: "How much funding per award is estimated for this opportunity?"
-    gotchas: "Summarize some common 'gotchas' that respondants should be aware of."
+    Summary: "Summarize this grant opportunity in 3 sentences or less."
+    Funding: "How much funding per award is estimated for this opportunity?"
+    Gotchas: "Summarize some common 'gotchas' that respondants should be aware of."
