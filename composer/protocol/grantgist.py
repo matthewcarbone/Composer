@@ -757,6 +757,11 @@ def _summarize_grant(metadata_file: Path, p: Params):
     formatted_responses = "\n".join(formatted_responses)
 
     summary = f"""
+⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
+full funding opportunity before responding to a call. This digest is only
+intended as exactly that: a short summary.
+✅ This summary has passed Microsoft Azure guardrails and is designated as safe.
+
 # {title}
 
 **NOFO/FOA#**: {foa_number}
