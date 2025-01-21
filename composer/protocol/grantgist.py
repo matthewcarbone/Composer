@@ -751,7 +751,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     # Parse through responses
     formatted_responses = []
     for name, prompt, content in responses:
-        s = f"# {name}\n*Prompt: {prompt}*\n{content}"
+        s = f"## {name}\n*Prompt: {prompt}*\n\n{content}"
         formatted_responses.append(s)
 
     formatted_responses = "\n".join(formatted_responses)
@@ -760,13 +760,17 @@ def _summarize_grant(metadata_file: Path, p: Params):
 ⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
 intended as exactly that: a short summary.
+
 ✅ This summary has passed Microsoft Azure guardrails and is designated as safe.
 
 # {title}
 
 **NOFO/FOA#**: {foa_number}
+
 **Issuing Agency**: {agency}
-**Post Date:** {postdate}\n\n
+
+**Post Date:** {postdate}\n
+
 {formatted_responses}
     """
 
