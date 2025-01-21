@@ -743,32 +743,30 @@ def _summarize_grant(metadata_file: Path, p: Params):
         try:
             ai_metadata = chunk0.response_metadata
         except:
+            ai_metadata = None
             logger.warning("response_metadata not found")
 
-        responses.append(f"{name} - {prompt}\n{ai_content}")
-    responses = "\n\n".join(responses)
+        responses.append((name, prompt, ai_content))
+
+    # Parse through responses
+    formatted_responses = []
+    for name, prompt, content in responses:
+        s = f"# {name}\n*Prompt: {prompt}*\n{content}"
+        formatted_responses.append(s)
+
+    formatted_responses = "\n".join(formatted_responses)
 
     summary = f"""
-Title (NOFO):     {title} ({foa_number})
-Issuing Agency:   {agency}
-Post Date:        {postdate}\n\n
-{responses}
+# {title}
+
+**NOFO/FOA#**: {foa_number}
+**Issuing Agency**: {agency}
+**Post Date:** {postdate}\n\n
+{formatted_responses}
     """
 
-    prompt = "Your only task is to neatly format provided text into Markdown format."
-    for chunk in app.stream(
-        {"messages": [("system", prompt), ("human", summary)]}, stream_mode="values"
-    ):
-        logger.debug(chunk["messages"][-1])
-    chunk0 = chunk["messages"][-1]  # type: ignore
-    ai_content = chunk0.content
-    try:
-        ai_metadata = chunk0.response_metadata
-    except:
-        logger.warning("response_metadata not found")
-
-    with open("tmp.md", "w") as f:
-        f.write(ai_content)
+    with open(f"{opportunity_id}.md", "w") as f:
+        f.write(summary)
 
 
 def summarize_grants(hydra_conf: DictConfig):
