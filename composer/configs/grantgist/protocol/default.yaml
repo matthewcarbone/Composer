@@ -83,6 +83,11 @@ config:
   human_prompts:
     Summary: >
       Summarize this grant opportunity in 3 sentences or less.
+    Eligibility: >
+      Who, or what institutions, is eligible to submit a response to this funding
+      opportunity? IMPORTANT: Answer the question: are United States
+      Department of Energy national laboratories eligible to respond to this
+      funding opportunity (either as the lead or otherwise) and if so, in what capacity.
     Deadlines: >
       Record ALL deadlines mentioned in the funding opportunity, and present
       them in the format of "<deadline type>: <date>", where <deadline type>

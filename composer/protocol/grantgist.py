@@ -419,16 +419,23 @@ def pull_grants_gov_extract(hydra_conf: DictConfig):
         count_saved = 0
         for opportunity in data:
             post_date = datetime.strptime(opportunity["PostDate"], "%m%d%Y")
-            agency_name = opportunity["AgencyName"]
             uid = opportunity["OpportunityID"]
             continue_forward = True
             for key, allowed_values in p.metadata_filter.items():
-                if opportunity[key] not in allowed_values:
-                    logger.debug(
-                        f"Opportunity {uid}: {key}: {opportunity[key]} not in allowed values {allowed_values} - skipping"
+                try:
+                    if opportunity[key] not in allowed_values:
+                        logger.debug(
+                            f"Opportunity {uid}: {key}: {opportunity[key]} not in allowed values {allowed_values} - skipping"
+                        )
+                        continue_forward = False
+                        break
+                except KeyError:
+                    logger.error(
+                        f"Opportunity {uid}: key {key} not found in opportunity - skipping"
                     )
                     continue_forward = False
                     break
+
             if p.min_date <= post_date <= p.max_date and continue_forward:
                 path = p.metadata_path / f"{uid}.json"
                 logger.debug(f"Saving JSON file for opportunity ID={uid} to {path}")
