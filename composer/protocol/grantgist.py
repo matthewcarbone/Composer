@@ -868,17 +868,15 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     safety_message = construct_safety_message(responses)
 
-    summary = f"""<small>⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
+    summary = f"""<small>- ⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
 intended as exactly that: a short summary.
-
-{safety_message}
-
-ℹ️  Please direct any questions, comments or concerns to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
+- {safety_message}
+- ℹ️  Please direct any questions, comments or concerns to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
 or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
-
-🚀 Contributions welcome!
-[github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)</small>
+- 🚀 Contributions welcome!
+[github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
+</small>
 
 ## {title}
 
@@ -907,9 +905,9 @@ def summarize_grants(hydra_conf: DictConfig):
     p = Params(hydra_conf)
 
     for metadata_file in p.metadata_path.glob("*.json"):
-        # testing
-        # use only the early career award
-        if "358302.json" not in str(metadata_file):
-            continue
+        # # testing
+        # # use only the early career award
+        # if "358302.json" not in str(metadata_file):
+        #     continue
 
         _summarize_grant(metadata_file, p)
