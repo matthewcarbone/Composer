@@ -714,32 +714,74 @@ def construct_vectorstore(hydra_conf: DictConfig):
     _write_vectorstore(vectorstore, p)
 
 
-def _is_safe(metadata):
-    _safe = True
+def _is_safe(metadata, pre):
+    _errors = []
+    _warnings = []
     for key, value in metadata.items():
         try:
             severity = value["severity"]
-            if severity != "safe":
-                logger.critical(f"Safety check failed for {key}: {value}")
-                _safe = False
+            if severity == "safe":
+                pass
+            elif severity == "low":
+                logger.warning(f"{pre} Safety check {key}: {value}")
+                _warnings.append(f"{pre} {key}: {severity}")
+            else:
+                logger.error(f"{pre} Safety check medium or high severity: {key}: {value}")
+                _errors.append(f"{pre} {key}: {severity}")
         except KeyError:
             pass
         try:
             detected = value["detected"]
             if detected:
-                logger.critical(f"Jailbreak detected for {key}: {value}")
-                _safe = False
+                msg = f"Jailbreak detected for {pre} {key}: {value}"
+                logger.critical(msg)
+                raise RuntimeError
         except KeyError:
             pass
-    return _safe
+    return _warnings, _errors
 
 
 def is_safe(metadata):
-    prompt_safe = all(
-        [_is_safe(d["content_filter_results"]) for d in metadata["prompt_filter_results"]]
-    )
-    content_safe = _is_safe(metadata["content_filter_results"])
-    return prompt_safe and content_safe
+    _errors = []
+    _warnings = []
+    for d in metadata["prompt_filter_results"]:
+        _w, _e = _is_safe(d["content_filter_results"], "Prompt")
+        _errors.extend(_e)
+        _warnings.extend(_w)
+    _w, _e = _is_safe(metadata["content_filter_results"], "Content")
+    _errors.extend(_e)
+    _warnings.extend(_w)
+    return len(_errors) == 0 and len(_warnings) == 0, _warnings, _errors
+
+
+def construct_safety_message(responses):
+    safe_message = "✅ This summary has passed Microsoft Azure guardrails and is designated as 'safe' or 'low severity'."
+    _errors = []
+    _warnings = []
+    for name, prompt, ai_content, ai_metadata in responses:
+        safe, _w, _e = is_safe(ai_metadata)
+        if safe:
+            continue
+        _w = [f"{name}: {ww}" for ww in _w]
+        _e = [f"{name}: {ee}" for ee in _e]
+        _warnings.extend(_w)
+        _errors.extend(_e)
+
+    if len(_errors) == 0 and len(_warnings) == 0:
+        return safe_message
+
+    e_msg = ""
+    if len(_errors) > 0:
+        msg = [f"- {m}" for m in _errors]
+        msg = "\n".join(msg)
+        e_msg = f"⛔️ Safety checks failed, assume responses are unsafe!\n{msg}"
+    w_msg = ""
+    if len(_warnings) > 0:
+        msg = [f"- {m}" for m in _warnings]
+        msg = "\n".join(msg)
+        w_msg = f"⚠️  Be aware: some safety checks indicated 'low' severity\n{msg}"
+
+    return f"{e_msg}\n{w_msg}"
 
 
 def _summarize_grant(metadata_file: Path, p: Params):
@@ -817,40 +859,37 @@ def _summarize_grant(metadata_file: Path, p: Params):
     # Parse through responses
     formatted_responses = []
     formatted_prompts = []
-    for (name, prompt, content, ai_metadata) in responses:
-        formatted_responses.append(f"**{name}**: {content.strip()}")
-        formatted_prompts.append(f"**{name}**: {prompt.strip()}")
+    for name, prompt, content, ai_metadata in responses:
+        formatted_responses.append(f"#### {name}\n⚙️ {content.strip()}")
+        formatted_prompts.append(f"####{name}\n{prompt.strip()}")
 
     formatted_responses = "\n\n".join(formatted_responses)
     formatted_prompts = "\n\n".join(formatted_prompts)
 
-    summary = f"""### {title}
+    safety_message = construct_safety_message(responses)
+
+    summary = f"""⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
+full funding opportunity before responding to a call. This digest is only
+intended as exactly that: a short summary.
+
+{safety_message}
+
+ℹ️  Please direct any questions, comments or concerns to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
+or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
+
+🚀 Contributions welcome!
+[github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
+
+## {title}
 
 **NOFO/FOA#**: {foa_number}
 
 **Issuing Agency**: {agency}
 
-**Post Date:** {postdate}\n\n
+**Post Date**: {postdate}\n\n
 
 {formatted_responses}
 
----
-
-### Information
-
-⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
-full funding opportunity before responding to a call. This digest is only
-intended as exactly that: a short summary.
-
-✅ This summary has passed Microsoft Azure guardrails and is designated as safe.
-
-ℹ️  Please direct any questions to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
-or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
-
-🚀 Code is free and open source. Contributions welcome!
-[github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
-
----
 
 ### Prompt Information\n
 
