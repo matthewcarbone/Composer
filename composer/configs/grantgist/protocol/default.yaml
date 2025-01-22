@@ -37,6 +37,15 @@ config:
     details: "https://apply07.grants.gov/grantsws/rest/opportunity/details"
     extracts: "https://prod-grants-gov-chatbot.s3.amazonaws.com/extracts"
 
+  # Filters any metadata in which the key in the FOA/NOFO metadata matches
+  # any of the keys here. Only keeps matches.
+  metadata_filter:
+    AgencyName:
+      - "Office of Science"
+      - "National Science Foundation"
+      - "DARPA - Defense Sciences Office"
+      - "Advanced Research Projects Agency Energy"
+
   min_date: ${today}
   max_date: ${today}
 
@@ -68,9 +77,24 @@ config:
     containing information about a single funding opportunity. You will
     respond to the user query as succinctly as possible, but not at the
     expense of key information. Try to keep responses to 3 sentences or less.
-    Make as many queries to the database as necessary to fully answer the question."
+    Make as many queries to the database as necessary to fully answer the question.
+    Importantly: answer in Markdown format but without headers ("#", "##", etc.).
 
   human_prompts:
-    Summary: "Summarize this grant opportunity in 3 sentences or less."
-    Funding: "How much funding per award is estimated for this opportunity?"
-    Gotchas: "Summarize some common 'gotchas' that respondants should be aware of."
+    Summary: >
+      Summarize this grant opportunity in 3 sentences or less.
+    Deadlines: >
+      Record ALL deadlines mentioned in the funding opportunity, and present
+      them in the format of "<deadline type>: <date>", where <deadline type>
+      is the deadline in question (final draft, pre-application, letter of
+      intent, etc.) and <date> is the deadline including a time, if provided
+      (e.g. 12 February 2023 at 5:00 PM EST).
+    Funding: >
+      How much funding PER AWARD is estimated for this opportunity?
+    Competitiveness: >
+      Speculate on the competitiveness of this award. Take into account the
+      award amount, number of awards expected, etc. Summarize your conclusions
+      in 3 sentences or less.
+    Gotchas: >
+      Summarize ALL 'gotchas' that respondants should be aware of in this
+      funding opportunity.

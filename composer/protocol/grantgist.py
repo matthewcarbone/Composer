@@ -117,6 +117,18 @@ class Params:
         return path_value
 
     @cached_property
+    def summaries_path(self) -> Path:
+        """
+        Returns:
+            Path: The path to the 'summaries' directory. Created if
+            it doesn't exist.
+        """
+        path_value = self.root / "summaries"
+        path_value.mkdir(exist_ok=True, parents=True)
+        logger.debug(f"Accessed 'documents_path': created directory at {path_value}")
+        return path_value
+
+    @cached_property
     def min_date(self) -> datetime:
         """
         Returns:
@@ -136,6 +148,16 @@ class Params:
         """
         value = datetime.strptime(str(self.conf.max_date), "%Y%m%d")
         logger.debug(f"Accessed 'max_date' with value: {value}")
+        return value
+
+    @cached_property
+    def metadata_filter(self) -> Dict[str, List[str]]:
+        """
+        Returns:
+            dict: The list of allowed values keyed by metadata key.
+        """
+        value = self.conf.metadata_filter
+        logger.debug(f"Accessed 'metadata_filter' with value {value}")
         return value
 
     @cached_property
@@ -397,8 +419,17 @@ def pull_grants_gov_extract(hydra_conf: DictConfig):
         count_saved = 0
         for opportunity in data:
             post_date = datetime.strptime(opportunity["PostDate"], "%m%d%Y")
-            if p.min_date <= post_date <= p.max_date:
-                uid = opportunity["OpportunityID"]
+            agency_name = opportunity["AgencyName"]
+            uid = opportunity["OpportunityID"]
+            continue_forward = True
+            for key, allowed_values in p.metadata_filter.items():
+                if opportunity[key] not in allowed_values:
+                    logger.debug(
+                        f"Opportunity {uid}: {key}: {opportunity[key]} not in allowed values {allowed_values} - skipping"
+                    )
+                    continue_forward = False
+                    break
+            if p.min_date <= post_date <= p.max_date and continue_forward:
                 path = p.metadata_path / f"{uid}.json"
                 logger.debug(f"Saving JSON file for opportunity ID={uid} to {path}")
                 with open(path, "w", encoding="utf-8") as f:
