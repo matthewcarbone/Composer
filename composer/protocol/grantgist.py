@@ -817,7 +817,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     # Parse through responses
     formatted_responses = []
     formatted_prompts = []
-    for name, prompt, content in responses:
+    for (name, prompt, content, ai_metadata) in responses:
         formatted_responses.append(f"**{name}**: {content.strip()}")
         formatted_prompts.append(f"**{name}**: {prompt.strip()}")
 
