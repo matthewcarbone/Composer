@@ -21,6 +21,7 @@ from langchain_core.tools import tool
 from langchain_core.vectorstores import VectorStore
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
+from md2pdf.core import md2pdf
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
 from pydantic import BaseModel, Field
@@ -712,7 +713,32 @@ def construct_vectorstore(hydra_conf: DictConfig):
     _write_vectorstore(vectorstore, p)
 
 
-def _get_app(): ...
+def _is_safe(metadata):
+    _safe = True
+    for key, value in metadata.items():
+        try:
+            severity = value["severity"]
+            if severity != "safe":
+                logger.critical(f"Safety check failed for {key}: {value}")
+                _safe = False
+        except KeyError:
+            pass
+        try:
+            detected = value["detected"]
+            if detected:
+                logger.critical(f"Jailbreak detected for {key}: {value}")
+                _safe = False
+        except KeyError:
+            pass
+    return _safe
+
+
+def is_safe(metadata):
+    prompt_safe = all(
+        [_is_safe(d["content_filter_results"]) for d in metadata["prompt_filter_results"]]
+    )
+    content_safe = _is_safe(metadata["content_filter_results"])
+    return prompt_safe and content_safe
 
 
 def _summarize_grant(metadata_file: Path, p: Params):
@@ -771,6 +797,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     app = workflow.compile()
 
     responses = []
+    safe = True
     for name, prompt in p.human_prompts.items():
         for chunk in app.stream(
             {"messages": [("system", p.system_prompt), ("human", prompt)]}, stream_mode="values"
@@ -780,11 +807,26 @@ def _summarize_grant(metadata_file: Path, p: Params):
         ai_content = chunk0.content
         try:
             ai_metadata = chunk0.response_metadata
+            safe = is_safe(ai_metadata)
         except:
             ai_metadata = None
-            logger.warning("response_metadata not found")
+            # TODO: add option to override this
+            logger.error("response_metadata not found, cannot verify safety")
+            safe = False
+            break
 
         responses.append((name, prompt, ai_content))
+
+        if not safe:
+            break
+
+    if not safe:
+        (name, prompt, ai_content) = responses[-1]
+        logger.critical(
+            f"Prompt or response for opportunity {opportunity_id} marked as UNSAFE. Latest result: {name}\n{prompt}\n{ai_content}"
+        )
+        logger.warning("This response summary will be skipped.")
+        return
 
     # Parse through responses
     formatted_responses = []
@@ -801,6 +843,12 @@ intended as exactly that: a short summary.
 
 ✅ This summary has passed Microsoft Azure guardrails and is designated as safe.
 
+ℹ️  Please direct any questions to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
+or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
+
+🚀 Code is free and open source. Contributions welcome!
+[github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
+
 # {title}
 
 **NOFO/FOA#**: {foa_number}
@@ -812,8 +860,12 @@ intended as exactly that: a short summary.
 {formatted_responses}
     """
 
-    with open(f"{opportunity_id}.md", "w") as f:
+    # Write the raw Markdown file
+    with open(p.summaries_path / f"{opportunity_id}.md", "w") as f:
         f.write(summary)
+
+    # Write the pdf
+    md2pdf(p.summaries_path / f"{opportunity_id}.pdf", md_content=summary)
 
 
 def summarize_grants(hydra_conf: DictConfig):
