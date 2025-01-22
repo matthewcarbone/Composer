@@ -36,6 +36,7 @@ memory = Memory(location=get_memory_dir(), verbose=int(get_verbosity()))
 
 logging.getLogger("fontTools").setLevel(logging.WARNING)
 
+
 @dataclass
 class Params:
     """
@@ -806,24 +807,38 @@ def _summarize_grant(metadata_file: Path, p: Params):
         ai_content = chunk0.content
         try:
             ai_metadata = chunk0.response_metadata
-            is_safe(ai_metadata)
         except:
             ai_metadata = None
             # TODO: add option to override this
             logger.error("response_metadata not found, cannot verify safety")
 
-        responses.append((name, prompt, ai_content))
+        responses.append((name, prompt, ai_content, ai_metadata))
 
     # Parse through responses
     formatted_responses = []
+    formatted_prompts = []
     for name, prompt, content in responses:
-        prompt = prompt.strip()
-        s = f"## {name}\n*Prompt: {prompt}*\n\n{content}\n"
-        formatted_responses.append(s)
+        formatted_responses.append(f"**{name}**: {content.strip()}")
+        formatted_prompts.append(f"**{name}**: {prompt.strip()}")
 
-    formatted_responses = "\n".join(formatted_responses)
+    formatted_responses = "\n\n".join(formatted_responses)
+    formatted_prompts = "\n\n".join(formatted_prompts)
 
-    summary = f"""⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
+    summary = f"""### {title}
+
+**NOFO/FOA#**: {foa_number}
+
+**Issuing Agency**: {agency}
+
+**Post Date:** {postdate}\n\n
+
+{formatted_responses}
+
+---
+
+### Information
+
+⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
 intended as exactly that: a short summary.
 
@@ -835,20 +850,17 @@ or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
 🚀 Code is free and open source. Contributions welcome!
 [github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
 
-# {title}
+---
 
-**NOFO/FOA#**: {foa_number}
+### Prompt Information\n
 
-**Issuing Agency**: {agency}
-
-**Post Date:** {postdate}\n
-
-{formatted_responses}
+{formatted_prompts}
     """
 
     # Write the raw Markdown file
     with open(p.summaries_path / f"{opportunity_id}.md", "w") as f:
         f.write(summary)
+
 
 def summarize_grants(hydra_conf: DictConfig):
     """For each opportunity, uses RAG to summarize."""
