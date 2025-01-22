@@ -90,9 +90,9 @@ config:
       funding opportunity (either as the lead or otherwise) and if so, in what capacity.
     Deadlines: >
       Record ALL deadlines mentioned in the funding opportunity, and present
-      them in the format of "<deadline type>: <date>", where <deadline type>
+      them in the format of "<deadline type>: <date>", where deadline type
       is the deadline in question (final draft, pre-application, letter of
-      intent, etc.) and <date> is the deadline including a time, if provided
+      intent, etc.) and date is the deadline including a time, if provided
       (e.g. 12 February 2023 at 5:00 PM EST).
     Funding: >
       How much funding PER AWARD is estimated for this opportunity?

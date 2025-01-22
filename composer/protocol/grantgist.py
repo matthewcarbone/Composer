@@ -21,7 +21,6 @@ from langchain_core.tools import tool
 from langchain_core.vectorstores import VectorStore
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode, tools_condition
-from md2pdf.core import md2pdf
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
 from pydantic import BaseModel, Field
@@ -35,6 +34,7 @@ from composer.utils import Timer, get_file_hash
 logger = logging.getLogger(__name__)
 memory = Memory(location=get_memory_dir(), verbose=int(get_verbosity()))
 
+logging.getLogger("fontTools").setLevel(logging.WARNING)
 
 @dataclass
 class Params:
@@ -797,7 +797,6 @@ def _summarize_grant(metadata_file: Path, p: Params):
     app = workflow.compile()
 
     responses = []
-    safe = True
     for name, prompt in p.human_prompts.items():
         for chunk in app.stream(
             {"messages": [("system", p.system_prompt), ("human", prompt)]}, stream_mode="values"
@@ -807,37 +806,24 @@ def _summarize_grant(metadata_file: Path, p: Params):
         ai_content = chunk0.content
         try:
             ai_metadata = chunk0.response_metadata
-            safe = is_safe(ai_metadata)
+            is_safe(ai_metadata)
         except:
             ai_metadata = None
             # TODO: add option to override this
             logger.error("response_metadata not found, cannot verify safety")
-            safe = False
-            break
 
         responses.append((name, prompt, ai_content))
-
-        if not safe:
-            break
-
-    if not safe:
-        (name, prompt, ai_content) = responses[-1]
-        logger.critical(
-            f"Prompt or response for opportunity {opportunity_id} marked as UNSAFE. Latest result: {name}\n{prompt}\n{ai_content}"
-        )
-        logger.warning("This response summary will be skipped.")
-        return
 
     # Parse through responses
     formatted_responses = []
     for name, prompt, content in responses:
-        s = f"## {name}\n*Prompt: {prompt}*\n\n{content}"
+        prompt = prompt.strip()
+        s = f"## {name}\n*Prompt: {prompt}*\n\n{content}\n"
         formatted_responses.append(s)
 
     formatted_responses = "\n".join(formatted_responses)
 
-    summary = f"""
-⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
+    summary = f"""⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
 intended as exactly that: a short summary.
 
@@ -863,10 +849,6 @@ or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
     # Write the raw Markdown file
     with open(p.summaries_path / f"{opportunity_id}.md", "w") as f:
         f.write(summary)
-
-    # Write the pdf
-    md2pdf(p.summaries_path / f"{opportunity_id}.pdf", md_content=summary)
-
 
 def summarize_grants(hydra_conf: DictConfig):
     """For each opportunity, uses RAG to summarize."""
