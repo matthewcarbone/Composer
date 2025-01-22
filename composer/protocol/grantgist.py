@@ -860,15 +860,15 @@ def _summarize_grant(metadata_file: Path, p: Params):
     formatted_responses = []
     formatted_prompts = []
     for name, prompt, content, ai_metadata in responses:
-        formatted_responses.append(f"#### {name}\n⚙️ {content.strip()}")
-        formatted_prompts.append(f"####{name}\n{prompt.strip()}")
+        formatted_responses.append(f"#### ⚙️  {name}\n{content.strip()}")
+        formatted_prompts.append(f"- *{name}*: {prompt.strip()}")
 
     formatted_responses = "\n\n".join(formatted_responses)
-    formatted_prompts = "\n\n".join(formatted_prompts)
+    formatted_prompts = "\n".join(formatted_prompts)
 
     safety_message = construct_safety_message(responses)
 
-    summary = f"""⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
+    summary = f"""<small>⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
 intended as exactly that: a short summary.
 
@@ -878,7 +878,7 @@ intended as exactly that: a short summary.
 or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
 
 🚀 Contributions welcome!
-[github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
+[github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)</small>
 
 ## {title}
 

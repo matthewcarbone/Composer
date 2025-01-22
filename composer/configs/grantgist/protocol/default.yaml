@@ -51,7 +51,7 @@ config:
 
   retriever_kwargs: 
       # The number of documents to retrieve for each question
-    k: 20
+    k: 30
 
     # search_kwargs:
     #   k: 10
@@ -81,13 +81,16 @@ config:
     Importantly: answer in Markdown format but without headers ("#", "##", etc.).
 
   human_prompts:
-    Summary: >
-      Summarize this grant opportunity in 3 sentences or less.
-    Eligibility: >
-      Who, or what institutions, is eligible to submit a response to this funding
-      opportunity? IMPORTANT: Answer the question: are United States
-      Department of Energy national laboratories eligible to respond to this
-      funding opportunity (either as the lead or otherwise) and if so, in what capacity.
+    Scientific Summary: >
+      Summarize the scientific objectives of this funding opportunity. Pay
+      close attention to the key scientific themes of the proposal and especially
+      the scientific areas of research the funding opportunity is concerned
+      with. In addition, summarize non-goals of the funding opportunity, i.e.,
+      scientific research that the opportunity specifically will NOT fund. 
+    National Lab Eligibility: >
+      Answer the question: are United States Department of Energy national
+      laboratories eligible to respond to this funding opportunity (either as
+      the lead or otherwise) and if so, in what capacity.
     Deadlines: >
       Record ALL deadlines mentioned in the funding opportunity, and present
       them in the format of "<deadline type>: <date>", where deadline type
@@ -101,5 +104,9 @@ config:
       award amount, number of awards expected, etc. Summarize your conclusions
       in 3 sentences or less.
     Gotchas: >
-      Summarize ALL 'gotchas' that respondants should be aware of in this
-      funding opportunity.
+      Often times, there are simple mistakes respondent can make that will
+      significantly reduce their chances of getting funded, or disqualify them
+      all together. Some examples of this might be failing to include an
+      appendix or supplemental material, or failing to partner with a university.
+      Summarize some of the common key mistakes respondents make and how to
+      avoid them.
