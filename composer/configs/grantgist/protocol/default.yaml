@@ -111,7 +111,8 @@ config:
       (e.g. 12 February 2023 at 5:00 PM EST).
 
     Funding: >
-      How much funding PER AWARD is estimated for this opportunity?
+      How much funding PER AWARD is estimated for this opportunity, and what
+      is the period of performance for the award?
 
     Competitiveness: >
       Speculate on the competitiveness of this award. Take into account the
