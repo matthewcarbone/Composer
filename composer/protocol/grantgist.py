@@ -753,12 +753,12 @@ def is_safe(metadata):
 
 
 def construct_safety_message(responses):
-    if responses is None:
-        return "⚠️  Model metadata not available, safety check skipped"
     safe_message = "✅ This summary has passed Microsoft Azure guardrails and is designated as 'safe' or 'low severity'."
     _errors = []
     _warnings = []
     for name, prompt, ai_content, ai_metadata in responses:
+        if ai_metadata is None:
+            return "⚠️  Model metadata not available, safety check skipped"
         safe, _w, _e = is_safe(ai_metadata)
         if safe:
             continue
@@ -889,7 +889,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     summary = f"""
 > `composer.grantgist` (v{__version__}) [grants.gov](https://grants.gov/search-grants) digest 
 >
-> ⚡️ Powered by model/deployment: {model_name}
+> ⚡️ Powered by model/deployment: `{model_name}`
 >
 > 🚨 Attention! This summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
