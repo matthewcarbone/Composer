@@ -848,21 +848,22 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     responses = []
     for name, prompt in p.human_prompts.items():
-        # for chunk in app.stream(
-        #     {"messages": [("system", p.system_prompt), ("human", prompt)]}, stream_mode="values"
-        # ):
-        #     logger.debug(chunk["messages"][-1])
         message1 = {"role": "system", "content": p.system_prompt}
         message2 = {"role": "user", "content": prompt}
         try:
-            response = app.invoke({"messages": [message1, message2]})
+            payload = {"messages": [message1, message2]}
+            for chunk in app.stream(payload, stream_mode="values"):
+                logger.debug(chunk["messages"][-1])
         except openai.BadRequestError:
             content = (
                 f"Using system prompt {p.system_prompt}, address the question/comment: {prompt}"
             )
             message = {"role": "user", "content": content}
-            response = app.invoke({"messages": [message]})
-        chunk0 = response["messages"][-1]  # type: ignore
+            payload = {"message": [message]}
+            for chunk in app.stream(payload, stream_mode="values"):
+                logger.debug(chunk["messages"][-1])
+
+        chunk0 = chunk["messages"][-1]  # type: ignore
         ai_content = chunk0.content
         try:
             ai_metadata = chunk0.response_metadata
