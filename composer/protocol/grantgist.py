@@ -882,6 +882,7 @@ full funding opportunity before responding to a call. This digest is only
 intended as exactly that: a short summary.
 >
 {safety_message}
+>
 > ℹ️  Please direct any questions, comments or concerns to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
 or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
 >
