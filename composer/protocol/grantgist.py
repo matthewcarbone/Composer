@@ -913,7 +913,7 @@ def summarize_grants(hydra_conf: DictConfig):
     for metadata_file in p.metadata_path.glob("*.json"):
         # # testing
         # # use only the early career award
-        # if "358302.json" not in str(metadata_file):
-        #     continue
+        if "358302.json" not in str(metadata_file):
+            continue
 
         _summarize_grant(metadata_file, p)
