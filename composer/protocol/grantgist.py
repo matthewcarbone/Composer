@@ -6,32 +6,27 @@ from datetime import datetime
 from functools import cached_property
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, List, Literal, Optional, Tuple
-from uuid import uuid4
+from typing import Any, Dict, List, Tuple
 
 import openai
 import requests
-import rich
 import xmltodict
 from joblib import Memory, Parallel, delayed
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_transformers import LongContextReorder
 from langchain_core.documents import Document
-from langchain_core.messages import SystemMessage
-from langchain_core.prompts import PromptTemplate
 from langchain_core.tools import tool
 from langchain_core.vectorstores import VectorStore
 from langgraph.graph import END, START, MessagesState, StateGraph
-from langgraph.prebuilt import ToolNode, tools_condition
+from langgraph.prebuilt import ToolNode
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
-from pydantic import BaseModel, Field
 from rich import print as print
 from tqdm import tqdm
-from typing_extensions import Annotated, TypedDict
 
+from composer import __version__
 from composer.global_state import get_memory_dir, get_verbosity
-from composer.utils import Timer, get_file_hash
+from composer.utils import Timer
 
 logger = logging.getLogger(__name__)
 memory = Memory(location=get_memory_dir(), verbose=int(get_verbosity()))
@@ -887,7 +882,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     safety_message = construct_safety_message(responses)
 
     summary = f"""
-> `composer.grantgist` [grants.gov](https://grants.gov/search-grants) digest 
+> `composer.grantgist` (v{__version__}) [grants.gov](https://grants.gov/search-grants) digest 
 >
 > 🚨 Attention! This summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
@@ -928,9 +923,4 @@ def summarize_grants(hydra_conf: DictConfig):
     p = Params(hydra_conf)
 
     for metadata_file in p.metadata_path.glob("*.json"):
-        # # testing
-        # # use only the early career award
-        if "358302.json" not in str(metadata_file):
-            continue
-
         _summarize_grant(metadata_file, p)
