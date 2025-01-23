@@ -78,7 +78,9 @@ config:
     respond to the user query as succinctly as possible, but not at the
     expense of key information. Try to keep responses to 3 sentences or less.
     Make as many queries to the database as necessary to fully answer the question.
-    Importantly: answer in Markdown format but do NOT use headers ("#", "##", etc.).
+    Importantly: answer in Markdown format but do NOT use any Markdown 
+    headers ("#", "##", "###", "####", etc.). You can use bold, italics, or
+    any other Markdown formatting.
 
   human_prompts:
 
