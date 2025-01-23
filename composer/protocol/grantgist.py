@@ -852,11 +852,12 @@ def _summarize_grant(metadata_file: Path, p: Params):
         #     {"messages": [("system", p.system_prompt), ("human", prompt)]}, stream_mode="values"
         # ):
         #     logger.debug(chunk["messages"][-1])
-        try:
-            response = app.invoke({"messages": [("system", p.system_prompt), ("human", prompt)]})
-        except openai.BadRequestError:
-            msg = f"Using system information: {p.system_prompt}, address the user's question/comment: {prompt}"
-            response = app.invoke(msg)
+        message1 = {"role": "system", "content": p.system_prompt}
+        message2 = {"role": "user", "content": prompt}
+        response = app.invoke({"messages": [message1, message2]})
+        # except openai.BadRequestError:
+        #     msg = f"Using system information: {p.system_prompt}, address the user's question/comment: {prompt}"
+        #     response = app.invoke(msg)
         chunk0 = response["messages"][-1]  # type: ignore
         ai_content = chunk0.content
         try:
