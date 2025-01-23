@@ -788,6 +788,11 @@ def _summarize_grant(metadata_file: Path, p: Params):
     with open(metadata_file, "r") as f:
         metadata = json.load(f)
 
+    try:
+        model_name = p.llm.deployment_name
+    except AttributeError:
+        model_name = p.llm.model_name
+
     title = metadata["OpportunityTitle"]
     foa_number = metadata["OpportunityNumber"]
     agency = metadata["AgencyName"]
@@ -883,6 +888,8 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     summary = f"""
 > `composer.grantgist` (v{__version__}) [grants.gov](https://grants.gov/search-grants) digest 
+>
+> ⚡️ Powered by model/deployment: {model_name}
 >
 > 🚨 Attention! This summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
