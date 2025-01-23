@@ -36,6 +36,7 @@ logger = logging.getLogger(__name__)
 memory = Memory(location=get_memory_dir(), verbose=int(get_verbosity()))
 
 logging.getLogger("fontTools").setLevel(logging.WARNING)
+logging.getLogger("httpx").setLevel(logging.WARNING)
 
 
 @dataclass
@@ -886,7 +887,6 @@ or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
 >
 > 🚀 Free and open source. Contributions welcome!
 [github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
-</small>
 
 ## {title}
 
