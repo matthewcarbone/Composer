@@ -9,6 +9,7 @@ from tempfile import TemporaryDirectory
 from typing import Any, Dict, List, Literal, Optional, Tuple
 from uuid import uuid4
 
+import openai
 import requests
 import rich
 import xmltodict
@@ -847,11 +848,16 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     responses = []
     for name, prompt in p.human_prompts.items():
-        for chunk in app.stream(
-            {"messages": [("system", p.system_prompt), ("human", prompt)]}, stream_mode="values"
-        ):
-            logger.debug(chunk["messages"][-1])
-        chunk0 = chunk["messages"][-1]  # type: ignore
+        # for chunk in app.stream(
+        #     {"messages": [("system", p.system_prompt), ("human", prompt)]}, stream_mode="values"
+        # ):
+        #     logger.debug(chunk["messages"][-1])
+        try:
+            response = app.invoke({"messages": [("system", p.system_prompt), ("human", prompt)]})
+        except openai.BadRequestError:
+            msg = f"Using system information: {p.system_prompt}, address the user's question/comment: {prompt}"
+            response = app.invoke(msg)
+        chunk0 = response["messages"][-1]  # type: ignore
         ai_content = chunk0.content
         try:
             ai_metadata = chunk0.response_metadata
