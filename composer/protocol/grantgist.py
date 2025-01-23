@@ -859,7 +859,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
                 f"Using system prompt {p.system_prompt}, address the question/comment: {prompt}"
             )
             message = {"role": "user", "content": content}
-            payload = {"message": [message]}
+            payload = {"messages": [message]}
             for chunk in app.stream(payload, stream_mode="values"):
                 logger.debug(chunk["messages"][-1])
 
