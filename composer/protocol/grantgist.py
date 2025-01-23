@@ -724,7 +724,7 @@ def _is_safe(metadata, pre):
             if severity == "safe":
                 pass
             elif severity == "low":
-                logger.warning(f"{pre} Safety check {key}: {value}")
+                logger.warning(f"{pre} Safety check low severity: {key}: {value}")
                 _warnings.append(f"{pre} {key}: {severity}")
             else:
                 logger.error(f"{pre} Safety check medium or high severity: {key}: {value}")
@@ -756,6 +756,8 @@ def is_safe(metadata):
 
 
 def construct_safety_message(responses):
+    if responses is None:
+        return "⚠️  Model metadata not available, safety check skipped"
     safe_message = "✅ This summary has passed Microsoft Azure guardrails and is designated as 'safe' or 'low severity'."
     _errors = []
     _warnings = []
@@ -773,16 +775,16 @@ def construct_safety_message(responses):
 
     e_msg = ""
     if len(_errors) > 0:
-        msg = [f"- {m}" for m in _errors]
-        msg = "\n".join(msg)
-        e_msg = f"⛔️ Safety checks failed, assume responses are unsafe!\n{msg}"
+        msg = [f"> ⛔️ {m}" for m in _errors]
+        msg = "\n>\n".join(msg)
+        e_msg = f"> ⛔️ Safety checks failed, assume responses are unsafe!\n>\n{msg}"
     w_msg = ""
     if len(_warnings) > 0:
-        msg = [f"- {m}" for m in _warnings]
-        msg = "\n".join(msg)
-        w_msg = f"⚠️  Be aware: some safety checks indicated 'low' severity\n{msg}"
+        msg = [f"> ⚠️  {m}" for m in _warnings]
+        msg = "\n>\n".join(msg)
+        w_msg = f"> ⚠️  Be aware: some safety checks indicated 'low' severity\n>\n{msg}"
 
-    return f"{e_msg}\n{w_msg}"
+    return f"{e_msg}\n>\n{w_msg}"
 
 
 def _summarize_grant(metadata_file: Path, p: Params):
@@ -871,16 +873,18 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     safety_message = construct_safety_message(responses)
 
-    summary = f"""<small>- ⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
+    summary = f"""
+> `composer.grantgist` [grants.gov](https://grants.gov/search-grants) digest 
+>
+> 🚨 Attention! This summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
 intended as exactly that: a short summary.
-
-- {safety_message}
-
-- ℹ️  Please direct any questions, comments or concerns to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
+>
+{safety_message}
+> ℹ️  Please direct any questions, comments or concerns to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
 or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
-
-- 🚀 Contributions welcome!
+>
+> 🚀 Free and open source. Contributions welcome!
 [github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
 </small>
 
