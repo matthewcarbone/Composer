@@ -14,6 +14,7 @@ import rich
 import xmltodict
 from joblib import Memory, Parallel, delayed
 from langchain_community.document_loaders import PyPDFLoader
+from langchain_community.document_transformers import LongContextReorder
 from langchain_core.documents import Document
 from langchain_core.messages import SystemMessage
 from langchain_core.prompts import PromptTemplate
@@ -805,11 +806,13 @@ def _summarize_grant(metadata_file: Path, p: Params):
     def retrieve(query: str) -> Tuple[str, Document]:
         """Retrieve information related to a general query."""
 
-        retrieved_docs = vectorstore.similarity_search(query, **search_kwargs)
+        _docs = vectorstore.similarity_search(query, **search_kwargs)
+        reordering = LongContextReorder()
+        _docs = reordering.transform_documents(_docs)
         serialized = "\n\n".join(
-            (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}") for doc in retrieved_docs
+            (f"Source: {doc.metadata}\n" f"Content: {doc.page_content}") for doc in _docs
         )
-        return serialized, retrieved_docs
+        return serialized, _docs  # type: ignore
 
     tools = [retrieve]
     tool_node = ToolNode(tools)
@@ -871,9 +874,12 @@ def _summarize_grant(metadata_file: Path, p: Params):
     summary = f"""<small>- ⚠️  Caution: this summary is AI-generated. There can be errors. Always read the
 full funding opportunity before responding to a call. This digest is only
 intended as exactly that: a short summary.
+
 - {safety_message}
+
 - ℹ️  Please direct any questions, comments or concerns to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
 or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
+
 - 🚀 Contributions welcome!
 [github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
 </small>
