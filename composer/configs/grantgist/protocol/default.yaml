@@ -42,9 +42,9 @@ config:
   metadata_filter:
     AgencyName:
       - "Office of Science"
-      - "National Science Foundation"
-      - "DARPA - Defense Sciences Office"
-      - "Advanced Research Projects Agency Energy"
+      # - "National Science Foundation"
+      # - "DARPA - Defense Sciences Office"
+      # - "Advanced Research Projects Agency Energy"
 
   min_date: ${today}
   max_date: ${today}
