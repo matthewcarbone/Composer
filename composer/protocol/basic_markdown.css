@@ -1,0 +1,19 @@
+/* Headings: Arial */
+h1, h2, h3, h4, h5, h6 {
+  font-family: Arial, sans-serif;
+}
+
+/* Body text: Times New Roman */
+body {
+  font-family: "Times New Roman", serif;
+}
+
+/* Blockquote highlighting */
+blockquote {
+  border-left: 4px solid #ccc;
+  padding-left: 1em;
+  margin-left: 0;
+  color: #555;
+  background-color: #f9f9f9;
+  font-size: 90%;
+}
