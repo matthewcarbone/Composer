@@ -19,6 +19,7 @@ from langchain_core.tools import tool
 from langchain_core.vectorstores import VectorStore
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
+from md2pdf.core import md2pdf
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
 from rich import print as print
@@ -33,6 +34,7 @@ memory = Memory(location=get_memory_dir(), verbose=int(get_verbosity()))
 
 logging.getLogger("fontTools").setLevel(logging.WARNING)
 logging.getLogger("httpx").setLevel(logging.WARNING)
+css_file_path = Path(__file__).parent.resolve() / "basic_markdown.css"
 
 
 @dataclass
@@ -799,6 +801,10 @@ def _summarize_grant(metadata_file: Path, p: Params):
     dt_postdate = datetime.strptime(metadata["PostDate"], "%m%d%Y")
     postdate = dt_postdate.strftime("%d %B %Y")
 
+    if not (p.min_date <= dt_postdate <= p.max_date):
+        logger.debug(f"{metadata.name} post_date={postdate} not in range, skipping summary.")
+        return
+
     # Execute summaries with the LLM to a variety of prompts
     vectorstore = p.initialize_vectorstore()
     opportunity_id = metadata["OpportunityID"]
@@ -923,11 +929,14 @@ or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
     with open(p.summaries_path / f"{opportunity_id}.md", "w") as f:
         f.write(summary)
 
+    # Write the corresponding pdf
+    pdf_path = p.summaries_path / f"{opportunity_id}.pdf"
+    md2pdf(pdf_path, md_content=summary, css_file_path=css_file_path)
+
 
 def summarize_grants(hydra_conf: DictConfig):
     """For each opportunity, uses RAG to summarize."""
 
     p = Params(hydra_conf)
-
     for metadata_file in p.metadata_path.glob("*.json"):
         _summarize_grant(metadata_file, p)
