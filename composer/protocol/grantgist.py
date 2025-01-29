@@ -435,7 +435,7 @@ def pull_grants_gov_extract(hydra_conf: DictConfig):
                         continue_forward = False
                         break
                 except KeyError:
-                    logger.error(
+                    logger.warning(
                         f"Opportunity {uid}: key {key} not found in opportunity - skipping"
                     )
                     continue_forward = False
@@ -784,11 +784,6 @@ def _summarize_grant(metadata_file: Path, p: Params):
     with open(metadata_file, "r") as f:
         metadata = json.load(f)
 
-    try:
-        model_name = p.llm.deployment_name
-    except AttributeError:
-        model_name = p.llm.model_name
-
     dt_postdate = datetime.strptime(metadata["PostDate"], "%m%d%Y")
     postdate = dt_postdate.strftime("%d %B %Y")
 
@@ -844,6 +839,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     app = workflow.compile()
 
     responses = {}
+    name = None
     for name, prompt in p.human_prompts.items():
         message1 = {"role": "system", "content": p.system_prompt}
         message2 = {"role": "user", "content": prompt}
@@ -871,10 +867,25 @@ def _summarize_grant(metadata_file: Path, p: Params):
         model_response.check_safety()
         responses[name] = asdict(model_response)
 
+    if name is None:
+        msg = "No human prompts were provided"
+        logger.critical(msg)
+        raise ValueError(msg)
+
+    try:
+        model_name = responses[name]["model_name"]
+    except KeyError:
+        try:
+            model_name = p.llm.deployment_name
+        except AttributeError:
+            model_name = p.llm.model_name
+
     metadata["@summary"] = {"responses": responses, "model_name": model_name}
 
     with open(metadata_file, "w") as f:
         metadata = json.dump(metadata, f, indent=4)
+
+    logger.info(f"Done - grant ID {metadata_file.stem}")
 
 
 def summarize_grants(hydra_conf: DictConfig):
@@ -882,6 +893,6 @@ def summarize_grants(hydra_conf: DictConfig):
 
     p = Params(hydra_conf)
     for metadata_file in p.metadata_path.glob("*.json"):
-        if "358302.json" not in str(metadata_file):
-            continue
+        # if "358302.json" not in str(metadata_file):
+        #     continue
         _summarize_grant(metadata_file, p)
