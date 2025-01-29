@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 import openai
 import requests
 import xmltodict
+import yaml
 from joblib import Memory, Parallel, delayed
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_transformers import LongContextReorder
@@ -872,20 +873,12 @@ def _summarize_grant(metadata_file: Path, p: Params):
         logger.critical(msg)
         raise ValueError(msg)
 
-    try:
-        model_name = responses[name]["model_name"]
-    except KeyError:
-        try:
-            model_name = p.llm.deployment_name
-        except AttributeError:
-            model_name = p.llm.model_name
+    summary_path = p.summaries_path / f"{metadata_file.stem}.yaml"
 
-    metadata["@summary"] = {"responses": responses, "model_name": model_name}
+    with open(summary_path, "w") as f:
+        yaml.dump(metadata, f, indent=4)
 
-    with open(metadata_file, "w") as f:
-        metadata = json.dump(metadata, f, indent=4)
-
-    logger.info(f"Done - grant ID {metadata_file.stem}")
+    logger.info(f"Done - grant ID {summary_path}")
 
 
 def summarize_grants(hydra_conf: DictConfig):
