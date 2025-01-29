@@ -888,7 +888,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     with open(summary_path, "w") as f:
         f.write("---\n")
-        yaml.dump(metadata, sort_keys=False, indent=4)
+        f.write(yaml.dump(metadata, sort_keys=False, indent=4))
         f.write("---\n")
 
     logger.info(f"Done - grant ID {summary_path}")
