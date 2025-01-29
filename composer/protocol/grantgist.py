@@ -837,6 +837,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     responses = {}
     name = None
+    model_name = None
     for name, prompt in p.human_prompts.items():
         message1 = {"role": "system", "content": p.system_prompt}
         message2 = {"role": "user", "content": prompt}
@@ -862,6 +863,8 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
         model_response = Response(name=name, prompt=prompt, raw=chunk0)
         model_response.check_safety()
+        if model_response.metadata is not None:
+            model_name = model_response.metadata["model_name"]
         responses[name] = asdict(model_response)
 
     if name is None:
@@ -869,20 +872,24 @@ def _summarize_grant(metadata_file: Path, p: Params):
         logger.critical(msg)
         raise ValueError(msg)
 
-    try:
-        model_name = responses[name]["model_name"]
-    except KeyError:
+    if model_name is None:
         try:
             model_name = p.llm.deployment_name
         except AttributeError:
             model_name = p.llm.model_name
 
     metadata["@summary"] = {"responses": responses, "model_name": model_name}
+    metadata["layout"] = "grantgist"
 
-    summary_path = p.summaries_path / f"{metadata_file.stem}.yaml"
+    # To make this compatible later on with Jekyll, we're going to save this
+    # as "markdown", but really it's just an empty markdown file with the
+    # Yaml data in the frontmatter
+    summary_path = p.summaries_path / f"{metadata_file.stem}.md"
 
     with open(summary_path, "w") as f:
-        yaml.dump(metadata, f, indent=4)
+        f.write("---\n")
+        yaml.dump(metadata, sort_keys=False, indent=4)
+        f.write("---\n")
 
     logger.info(f"Done - grant ID {summary_path}")
 
