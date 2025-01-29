@@ -767,16 +767,15 @@ class Response:
             logger.error("Can only run check_safety once")
             return
 
-        for dat in metadata:
-            for _dat in dat["prompt_filter_results"]:  # type: ignore
-                for k, v in _dat["content_filter_results"].items():  # type: ignore
-                    k1, v1 = _get_severity_information(k, v)
-                    self.safety_record.append(("prompt", k1, v1))
-                    self.safety_counter[v1] += 1
-            for k, v in dat["content_filter_results"].items():  # type: ignore
+        for _dat in metadata["prompt_filter_results"]:  # type: ignore
+            for k, v in _dat["content_filter_results"].items():  # type: ignore
                 k1, v1 = _get_severity_information(k, v)
-                self.safety_record.append(("content", k1, v1))
+                self.safety_record.append(("prompt", k1, v1))
                 self.safety_counter[v1] += 1
+        for k, v in metadata["content_filter_results"].items():  # type: ignore
+            k1, v1 = _get_severity_information(k, v)
+            self.safety_record.append(("content", k1, v1))
+            self.safety_counter[v1] += 1
 
 
 def _summarize_grant(metadata_file: Path, p: Params):
@@ -792,7 +791,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     postdate = dt_postdate.strftime("%d %B %Y")
 
     if not (p.min_date <= dt_postdate <= p.max_date):
-        logger.debug(f"{metadata.name} post_date={postdate} not in range, skipping summary.")
+        logger.debug(f"{metadata_file} post_date={postdate} not in range, skipping summary.")
         return
 
     # Execute summaries with the LLM to a variety of prompts
@@ -873,7 +872,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     metadata["@summary"] = {"responses": responses, "model_name": model_name}
 
     with open(metadata_file, "w") as f:
-        metadata = json.dump(metadata, f)
+        metadata = json.dump(metadata, f, indent=4)
 
 
 def summarize_grants(hydra_conf: DictConfig):
