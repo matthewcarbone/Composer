@@ -1,12 +1,13 @@
 import json
 import logging
 import zipfile
-from dataclasses import dataclass
+from collections import defaultdict
+from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from functools import cached_property
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Literal, Tuple, Union
 
 import openai
 import requests
@@ -15,10 +16,12 @@ from joblib import Memory, Parallel, delayed
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_transformers import LongContextReorder
 from langchain_core.documents import Document
+from langchain_core.messages.ai import AIMessage
 from langchain_core.tools import tool
 from langchain_core.vectorstores import VectorStore
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
+from langgraph.pregel.io import AddableValuesDict
 from md2pdf.core import md2pdf
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
@@ -714,76 +717,55 @@ def construct_vectorstore(hydra_conf: DictConfig):
     _write_vectorstore(vectorstore, p)
 
 
-def _is_safe(metadata, pre):
-    _errors = []
-    _warnings = []
-    for key, value in metadata.items():
+def _get_severity_information(k, v):
+    if "severity" in v:
+        return k, v["severity"]
+    elif "detected" in v:
+        if v["detected"]:
+            return k, "high"
+        else:
+            return k, "safe"
+    else:
+        raise ValueError(f"Unknown severity check {k}, {v}")
+
+
+@dataclass
+class Response:
+    name: str
+    prompt: str
+    raw: dict
+    safety_record: List[Tuple[str, str, str]] = field(default_factory=list)
+    safety_counter: Dict[Literal["safe", "low", "medium", "high"], int] = field(
+        default_factory=defaultdict(int)  # type: ignore
+    )
+
+    @property
+    def content(self):
+        return self.raw["content"]
+
+    @property
+    def metadata(self) -> Union[Dict[str, Any], None]:
         try:
-            severity = value["severity"]
-            if severity == "safe":
-                pass
-            elif severity == "low":
-                logger.warning(f"{pre} Safety check low severity: {key}: {value}")
-                _warnings.append(f"{pre} {key}: {severity}")
-            else:
-                logger.error(f"{pre} Safety check medium or high severity: {key}: {value}")
-                _errors.append(f"{pre} {key}: {severity}")
-        except KeyError:
-            pass
-        try:
-            detected = value["detected"]
-            if detected:
-                msg = f"Jailbreak detected for {pre} {key}: {value}"
-                logger.critical(msg)
-                raise RuntimeError
-        except KeyError:
-            pass
-    return _warnings, _errors
+            return self.raw["response_metadata"]
+        except:
+            return None
 
+    def check_safety(self):
+        metadata = self.metadata
+        if not metadata:
+            logger.error("response_metadata not found, cannot verify safety")
+            return
 
-def is_safe(metadata):
-    _errors = []
-    _warnings = []
-    for d in metadata["prompt_filter_results"]:
-        _w, _e = _is_safe(d["content_filter_results"], "Prompt")
-        _errors.extend(_e)
-        _warnings.extend(_w)
-    _w, _e = _is_safe(metadata["content_filter_results"], "Content")
-    _errors.extend(_e)
-    _warnings.extend(_w)
-    return len(_errors) == 0 and len(_warnings) == 0, _warnings, _errors
-
-
-def construct_safety_message(responses):
-    safe_message = "✅ This summary has passed Microsoft Azure guardrails and is designated as 'safe' or 'low severity'."
-    _errors = []
-    _warnings = []
-    for name, prompt, ai_content, ai_metadata in responses:
-        if ai_metadata is None:
-            return "⚠️  Model metadata not available, safety check skipped"
-        safe, _w, _e = is_safe(ai_metadata)
-        if safe:
-            continue
-        _w = [f"{name}: {ww}" for ww in _w]
-        _e = [f"{name}: {ee}" for ee in _e]
-        _warnings.extend(_w)
-        _errors.extend(_e)
-
-    if len(_errors) == 0 and len(_warnings) == 0:
-        return safe_message
-
-    e_msg = ""
-    if len(_errors) > 0:
-        msg = [f"> ⛔️ {m}" for m in _errors]
-        msg = "\n>\n".join(msg)
-        e_msg = f"> ⛔️ Safety checks failed, assume responses are unsafe!\n>\n{msg}"
-    w_msg = ""
-    if len(_warnings) > 0:
-        msg = [f"> ⚠️  {m}" for m in _warnings]
-        msg = "\n>\n".join(msg)
-        w_msg = f"> ⚠️  Be aware: some safety checks indicated 'low' severity\n>\n{msg}"
-
-    return f"{e_msg}\n>\n{w_msg}"
+        for dat in metadata:
+            for _dat in dat["prompt_filter_results"]:  # type: ignore
+                for k, v in _dat["content_filter_results"].items():  # type: ignore
+                    k1, v1 = _get_severity_information(k, v)
+                    self.safety_record.append(("prompt", k1, v1))
+                    self.safety_counter[v1] += 1
+            for k, v in dat["content_filter_results"].items():  # type: ignore
+                k1, v1 = _get_severity_information(k, v)
+                self.safety_record.append(("content", k1, v1))
+                self.safety_counter[v1] += 1
 
 
 def _summarize_grant(metadata_file: Path, p: Params):
@@ -795,9 +777,6 @@ def _summarize_grant(metadata_file: Path, p: Params):
     except AttributeError:
         model_name = p.llm.model_name
 
-    title = metadata["OpportunityTitle"]
-    foa_number = metadata["OpportunityNumber"]
-    agency = metadata["AgencyName"]
     dt_postdate = datetime.strptime(metadata["PostDate"], "%m%d%Y")
     postdate = dt_postdate.strftime("%d %B %Y")
 
@@ -852,7 +831,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     app = workflow.compile()
 
-    responses = []
+    responses = {}
     for name, prompt in p.human_prompts.items():
         message1 = {"role": "system", "content": p.system_prompt}
         message2 = {"role": "user", "content": prompt}
@@ -870,68 +849,15 @@ def _summarize_grant(metadata_file: Path, p: Params):
                 logger.debug(chunk["messages"][-1])
 
         chunk0 = chunk["messages"][-1]  # type: ignore
-        ai_content = chunk0.content
-        try:
-            ai_metadata = chunk0.response_metadata
-        except:
-            ai_metadata = None
-            # TODO: add option to override this
-            logger.error("response_metadata not found, cannot verify safety")
 
-        responses.append((name, prompt, ai_content, ai_metadata))
+        model_response = Response(name=name, prompt=prompt, raw=chunk0)
+        model_response.check_safety()
+        responses[name] = asdict(model_response)
 
-    # Parse through responses
-    formatted_responses = []
-    formatted_prompts = []
-    for name, prompt, content, ai_metadata in responses:
-        formatted_responses.append(f"#### ⚙️  {name}\n{content.strip()}")
-        formatted_prompts.append(f"- *{name}*: {prompt.strip()}")
+    metadata["@summary"] = {"responses": responses, "model_name": model_name}
 
-    formatted_responses = "\n\n".join(formatted_responses)
-    formatted_prompts = "\n".join(formatted_prompts)
-
-    safety_message = construct_safety_message(responses)
-
-    summary = f"""
-> `composer.grantgist` (v{__version__}) [grants.gov](https://grants.gov/search-grants) digest 
->
-> ⚡️ Powered by model/deployment: `{model_name}`
->
-> 🚨 Attention! This summary is AI-generated. There can be errors. Always read the
-full funding opportunity before responding to a call. This digest is only
-intended as exactly that: a short summary.
->
-{safety_message}
->
-> ℹ️  Please direct any questions, comments or concerns to [mcarbone@bnl.gov](mailto:mcarbone@bnl.gov),
-or [open an issue on GitHub](https://github.com/matthewcarbone/Composer/issues).
->
-> 🚀 Free and open source. Contributions welcome!
-[github.com/matthewcarbone/Composer](https://github.com/matthewcarbone/Composer)
-
-## {title}
-
-**NOFO/FOA#**: {foa_number}
-
-**Issuing Agency**: {agency}
-
-**Post Date**: {postdate}\n\n
-
-{formatted_responses}
-
-
-### Prompt Information\n
-
-{formatted_prompts}
-    """
-
-    # Write the raw Markdown file
-    with open(p.summaries_path / f"{opportunity_id}.md", "w") as f:
-        f.write(summary)
-
-    # Write the corresponding pdf
-    pdf_path = p.summaries_path / f"{opportunity_id}.pdf"
-    md2pdf(pdf_path, md_content=summary, css_file_path=css_file_path)
+    with open(metadata_file, "w") as f:
+        metadata = json.dump(metadata, f)
 
 
 def summarize_grants(hydra_conf: DictConfig):
@@ -939,4 +865,6 @@ def summarize_grants(hydra_conf: DictConfig):
 
     p = Params(hydra_conf)
     for metadata_file in p.metadata_path.glob("*.json"):
+        if "358302.json" not in str(metadata_file):
+            continue
         _summarize_grant(metadata_file, p)
