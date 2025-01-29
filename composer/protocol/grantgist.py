@@ -876,7 +876,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     summary_path = p.summaries_path / f"{metadata_file.stem}.yaml"
 
     with open(summary_path, "w") as f:
-        yaml.dump(metadata, f, indent=4)
+        yaml.dump(responses, f, indent=4)
 
     logger.info(f"Done - grant ID {summary_path}")
 
