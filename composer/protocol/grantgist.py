@@ -1,7 +1,6 @@
 import json
 import logging
 import zipfile
-from collections import defaultdict
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from functools import cached_property
@@ -17,13 +16,10 @@ from joblib import Memory, Parallel, delayed
 from langchain_community.document_loaders import PyPDFLoader
 from langchain_community.document_transformers import LongContextReorder
 from langchain_core.documents import Document
-from langchain_core.messages.ai import AIMessage
 from langchain_core.tools import tool
 from langchain_core.vectorstores import VectorStore
 from langgraph.graph import END, START, MessagesState, StateGraph
 from langgraph.prebuilt import ToolNode
-from langgraph.pregel.io import AddableValuesDict
-from md2pdf.core import md2pdf
 from omegaconf.dictconfig import DictConfig
 from pathvalidate import sanitize_filename
 from rich import print as print
@@ -744,7 +740,7 @@ class Response:
     name: str
     prompt: str
     raw: dict
-    safety_record: List[Tuple[str, str, str]] = field(default_factory=list)
+    safety_record: List[List[str]] = field(default_factory=list)
     safety_counter: Optional[Dict[Literal["safe", "low", "medium", "high"], int]] = None
 
     @property
@@ -765,7 +761,7 @@ class Response:
             return
 
         if self.safety_counter is None:
-            self.safety_counter = defaultdict(int)
+            self.safety_counter = {"safe": 0, "low": 0, "medium": 0, "high": 0}
         else:
             logger.error("Can only run check_safety once")
             return
@@ -773,11 +769,11 @@ class Response:
         for _dat in metadata["prompt_filter_results"]:  # type: ignore
             for k, v in _dat["content_filter_results"].items():  # type: ignore
                 k1, v1 = _get_severity_information(k, v)
-                self.safety_record.append(("prompt", k1, v1))
+                self.safety_record.append(["prompt", k1, v1])
                 self.safety_counter[v1] += 1
         for k, v in metadata["content_filter_results"].items():  # type: ignore
             k1, v1 = _get_severity_information(k, v)
-            self.safety_record.append(("content", k1, v1))
+            self.safety_record.append(["content", k1, v1])
             self.safety_counter[v1] += 1
 
 
@@ -873,10 +869,20 @@ def _summarize_grant(metadata_file: Path, p: Params):
         logger.critical(msg)
         raise ValueError(msg)
 
+    try:
+        model_name = responses[name]["model_name"]
+    except KeyError:
+        try:
+            model_name = p.llm.deployment_name
+        except AttributeError:
+            model_name = p.llm.model_name
+
+    metadata["@summary"] = {"responses": responses, "model_name": model_name}
+
     summary_path = p.summaries_path / f"{metadata_file.stem}.yaml"
 
     with open(summary_path, "w") as f:
-        yaml.dump(responses, f, indent=4)
+        yaml.dump(metadata, f, indent=4)
 
     logger.info(f"Done - grant ID {summary_path}")
 
