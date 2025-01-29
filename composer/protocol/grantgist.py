@@ -883,6 +883,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     postdate_iso = dt_postdate.strftime("%Y-%m-%d")
     metadata["dateISO"] = postdate_iso
     metadata["dateDisplay"] = postdate
+    metadata["@version"] = __version__
 
     # To make this compatible later on with Jekyll, we're going to save this
     # as "markdown", but really it's just an empty markdown file with the
