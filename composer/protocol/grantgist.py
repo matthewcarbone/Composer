@@ -656,7 +656,8 @@ def _get_unique_identifier(metadata: Dict[str, str]) -> str:
     source_api = metadata["source_api"]
     opportunity_id = metadata["OpportunityId"]
     document_id = metadata["DocumentId"]
-    return f"{source_api}-{opportunity_id}-{document_id}"
+    document_name = metadata["name"]
+    return f"{source_api}-{opportunity_id}-{document_id}-{document_name}"
 
 
 def _write_vectorstore(vectorstore: VectorStore, p: Params):
@@ -692,6 +693,7 @@ def _write_vectorstore(vectorstore: VectorStore, p: Params):
                 page.metadata["source_api"] = "grants.gov"
                 page.metadata["OpportunityId"] = str(opportunity_id)
                 page.metadata["DocumentId"] = str(document_id)
+                page.metadata["name"] = str(document_path.name)
                 page.metadata["page"] = ii
                 current_id = _get_unique_identifier(page.metadata)
                 if current_id in existing_unique_ids:
