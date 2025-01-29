@@ -603,14 +603,14 @@ def _pull_all_attachments(
                 filename = sanitize_filename(attachment_name).replace(" ", "_")
                 file_dir = target_directory / opportunity_id / attachment_id
                 file_dir.mkdir(exist_ok=True, parents=True)
+                file_target = file_dir / filename
 
                 # Purge old files
                 # Sometimes updates happen and the FOA is re-released
                 for file in file_dir.iterdir():
-                    logger.warning(f"Removing old pdf {file} (FOA was updated?)")
-                    file.unlink()
-
-                file_target = file_dir / filename
+                    if str(file) != file_target:
+                        logger.warning(f"Removing old pdf {file} (FOA was updated?)")
+                        file.unlink()
 
                 logger.debug(f"Writing attachment to {file_target}")
                 with open(file_target, "wb") as f:
@@ -846,6 +846,7 @@ def _summarize_grant(metadata_file: Path, p: Params):
     for name, prompt in p.human_prompts.items():
         message1 = {"role": "system", "content": p.system_prompt}
         message2 = {"role": "user", "content": prompt}
+        chunk = None
         try:
             payload = {"messages": [message1, message2]}
             for chunk in app.stream(payload, stream_mode="values"):
@@ -859,7 +860,11 @@ def _summarize_grant(metadata_file: Path, p: Params):
             for chunk in app.stream(payload, stream_mode="values"):
                 logger.debug(chunk["messages"][-1])
 
-        chunk0 = chunk["messages"][-1]  # type: ignore
+        if chunk is None:
+            msg = "chunk was never set, something went very wrong"
+            logger.critical(msg)
+            raise RuntimeError(msg)
+        chunk0 = chunk["messages"][-1].model_dump()
 
         model_response = Response(name=name, prompt=prompt, raw=chunk0)
         model_response.check_safety()
