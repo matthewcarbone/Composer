@@ -364,7 +364,7 @@ wheels = [
 
 [[package]]
 name = "composer"
-version = "0.0.3"
+version = "0.0.4"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
