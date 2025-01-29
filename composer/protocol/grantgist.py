@@ -880,6 +880,9 @@ def _summarize_grant(metadata_file: Path, p: Params):
 
     metadata["@summary"] = {"responses": responses, "model_name": model_name}
     metadata["layout"] = "grantgist"
+    postdate_iso = dt_postdate.strftime("%Y-%m-%d")
+    metadata["dateISO"] = postdate_iso
+    metadata["dateDisplay"] = postdate
 
     # To make this compatible later on with Jekyll, we're going to save this
     # as "markdown", but really it's just an empty markdown file with the
