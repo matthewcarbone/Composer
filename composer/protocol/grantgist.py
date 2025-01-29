@@ -603,6 +603,13 @@ def _pull_all_attachments(
                 filename = sanitize_filename(attachment_name).replace(" ", "_")
                 file_dir = target_directory / opportunity_id / attachment_id
                 file_dir.mkdir(exist_ok=True, parents=True)
+
+                # Purge old files
+                # Sometimes updates happen and the FOA is re-released
+                for file in file_dir.iterdir():
+                    logger.warning(f"Removing old pdf {file} (FOA was updated?)")
+                    file.unlink()
+
                 file_target = file_dir / filename
 
                 logger.debug(f"Writing attachment to {file_target}")
