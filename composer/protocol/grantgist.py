@@ -7,7 +7,7 @@ from datetime import datetime
 from functools import cached_property
 from pathlib import Path
 from tempfile import TemporaryDirectory
-from typing import Any, Dict, List, Literal, Tuple, Union
+from typing import Any, Dict, List, Literal, Optional, Tuple, Union
 
 import openai
 import requests
@@ -742,9 +742,7 @@ class Response:
     prompt: str
     raw: dict
     safety_record: List[Tuple[str, str, str]] = field(default_factory=list)
-    safety_counter: Dict[Literal["safe", "low", "medium", "high"], int] = field(
-        default_factory=defaultdict(int)  # type: ignore
-    )
+    safety_counter: Optional[Dict[Literal["safe", "low", "medium", "high"], int]] = None
 
     @property
     def content(self):
@@ -761,6 +759,12 @@ class Response:
         metadata = self.metadata
         if not metadata:
             logger.error("response_metadata not found, cannot verify safety")
+            return
+
+        if self.safety_counter is None:
+            self.safety_counter = defaultdict(int)
+        else:
+            logger.error("Can only run check_safety once")
             return
 
         for dat in metadata:
