@@ -14,10 +14,20 @@ The following is a workflow diagram of how `composer/grantgist` works.
 
 ![image](https://github.com/user-attachments/assets/eba3733d-e97c-4da9-96c8-fcd2db18671c)
 
+## A few key points
+
+Before diving into the details, I want to go over a few key pieces of the API and my motivations for choosing these tools.
+
+- The code here can be used as an API, but it's designed as a CLI. The CLI is powered by [hydra](https://hydra.cc/), a powerful command line parser and configuration tool. It allows you to define specific Python instances using YAML configuration files or just the command line itself.
+- LLM use is abstracted. You will need an LLM back-end, accessible via Python library interfaces, to use this code. This can be e.g. a local Ollama instance, OpenAI, etc.
+- [Langgraph](https://www.langchain.com/langgraph) is used to power the AI components. Although difficult to learn, Langgraph appears to be the current state of the art in terms of orchestrating chains of LLM agents, retrieval augmented generation, etc. The field is moving rapidly, so this may change, but I chose Langgraph because it provides a common abstraction for interfacing with just about _any_ LLM backend.
+- Most of this code deals with pulling and wrangling data. To be respectful of external datasources _all html requests are cached_. This is generally best practice to avoid hitting external APIs too many times, which in turn helps us avoid hitting rate limits, getting IP banned, etc. It is also just generally respectful to do this. I use [joblib.memory](https://joblib.readthedocs.io/en/latest/generated/joblib.Memory.html) for on-disk caching.
+- Various databases and patterns are used depending on the requirement at hand. Mostly, simple flat storage of PDF and JSON files suffices, but for fast retrieval augmented generation, I use a [ChromaDB vector store](https://www.trychroma.com/).
+
 
 ## Understanding the necessary APIs
 
-Before using `uv run composer`, it's best to understand the structure of all the files involved and how to pull them from remote servers. The vast majority of the "data wrangling" for this project can actually be done on the command line. I use a Python API for simplicity, development speed, and convenience.
+Before using `uv run grantgist`, it's best to understand the structure of all the files involved and how to pull them from remote servers. The vast majority of the "data wrangling" for this project can actually be done on the command line. I use a Python API for simplicity, development speed, and convenience.
 
 In this example, we'll work with the Early Career Research Program NOFO DE-FOA-0003450. Let's assume you have already pulled the latest extract via the `curl` command above.
 
