@@ -10,6 +10,11 @@ curl https://prod-grants-gov-chatbot.s3.amazonaws.com/extracts/GrantsDBExtract20
 
 This resulting XML file can then be easily parsed using Python into individual JSON files, each corresponding to a single solicitation/FOA/NOFO. From there, these JSON files can be indexed using a [vector store](https://python.langchain.com/docs/integrations/retrievers/self_query/chroma_self_query/) for retrieval augmented generation (RAG) via a downstream large-language model.
 
+The following is a workflow diagram of how `composer/grantgist` works.
+
+![image](https://github.com/user-attachments/assets/eba3733d-e97c-4da9-96c8-fcd2db18671c)
+
+
 ## Understanding the necessary APIs
 
 Before using `uv run composer`, it's best to understand the structure of all the files involved and how to pull them from remote servers. The vast majority of the "data wrangling" for this project can actually be done on the command line. I use a Python API for simplicity, development speed, and convenience.
